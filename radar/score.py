@@ -52,6 +52,36 @@ def item_age(row) -> float:
     return _minutes_since(row["first_seen"])
 
 
+def beat_for(ents: set[str]) -> str:
+    """One-word desk label; first matching beat in config.BEATS wins."""
+    for name, keys in config.BEATS:
+        if ents & keys:
+            return name
+    return "general"
+
+
+def _direction(cluster_id: int, score_now: float, outlets_now: int,
+               age_min: float) -> tuple[str, float, int]:
+    """('new'|'up'|'down'|'flat', score delta, outlet delta) vs ~15 minutes ago."""
+    then = (datetime.now(timezone.utc)
+            - timedelta(minutes=config.STORY_LOOKBACK_MIN)).isoformat()
+    row = store.conn().execute(
+        "SELECT score, outlets FROM cluster_history WHERE cluster_id=? AND ts<=? "
+        "ORDER BY ts DESC LIMIT 1", (cluster_id, then),
+    ).fetchone()
+    if not row:
+        if age_min <= config.TICK_SECONDS / 60 * 1.5:
+            return "new", 0.0, 0
+        return "flat", 0.0, 0
+    d_score = round(score_now - (row["score"] or 0.0), 1)
+    d_out = outlets_now - (row["outlets"] or 0)
+    if d_score >= config.STORY_DELTA or d_out >= 2:
+        return "up", d_score, d_out
+    if d_score <= -config.STORY_DELTA:
+        return "down", d_score, d_out
+    return "flat", d_score, d_out
+
+
 def score_all(trends: list[dict]) -> list[dict]:
     """Recompute every active cluster's score. Returns them, best first."""
     c = store.conn()
@@ -76,11 +106,15 @@ def score_all(trends: list[dict]) -> list[dict]:
         # the story leaves the board rather than lingering a few minutes over.
         if result["age_min"] > config.MAX_ITEM_AGE_HOURS * 60:
             continue
+        # Direction is read *before* this tick's history row is written, so
+        # the comparison is against the past and not against itself.
+        result["direction"], result["score_delta"], result["outlet_delta"] = _direction(
+            cl["id"], result["score"], result["outlet_count"], result["age_min"])
         c.execute(
             """UPDATE clusters SET score=?, peak_score=MAX(peak_score, ?),
-               breakdown=?, trend_query=?, picture=? WHERE id=?""",
+               breakdown=?, trend_query=?, picture=?, beat=? WHERE id=?""",
             (result["score"], result["score"], json.dumps(result["breakdown"]),
-             result["trend_query"], result["picture"], cl["id"]),
+             result["trend_query"], result["picture"], result["beat"], cl["id"]),
         )
         # One row per cluster per tick was 44,000 rows a day — the table that
         # grew the database to 106 MB. Only trajectories worth reading later
@@ -181,6 +215,7 @@ def _score_cluster(cl, items, trends: list[dict]) -> dict:
         "languages": sorted({it["lang"] for it in items}),
         "entities": sorted(ents),
         "locality": locality_label,
+        "beat": beat_for(ents),
         "trend_query": trend_query,
         "trend_geo": trend_geo,
         "picture": picture,

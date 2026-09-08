@@ -19,6 +19,8 @@ def _run() -> None:
     print(f"  tick       every {config.TICK_SECONDS // 60} min")
     alerts = "telegram" if config.TELEGRAM_TOKEN else "console only"
     print(f"  alerts     {alerts} at score >= {config.ALERT_SCORE}")
+    from . import watchdog
+    print(f"  watchdog   {'systemd' if watchdog.enabled() else 'off (not under systemd)'}")
     poll.start_background()
     try:
         server.serve()
@@ -47,32 +49,41 @@ def _once() -> None:
 def _check() -> None:
     from . import feeds, net
 
-    def probe(label: str, url: str, parser=feeds.parse_items) -> None:
-        body = net.fetch(url, retries=1)
-        count = len(parser(body)) if body else 0
+    def probe(label: str, url: str, parser=feeds.parse_items) -> int:
+        res = net.fetch_result(url, retries=1)
+        count = len(parser(res.body)) if res.body else 0
         mark = "ok  " if count else "DEAD"
-        print(f"  {mark} {count:>4}  {label}")
+        why = "" if count else f"  ({res.error or 'HTTP ' + str(res.status)})"
+        print(f"  {mark} {count:>4}  {res.ms:>5}ms  {label}{why}")
+        return count
 
     print("Google Trends")
     for geo, label, _ in config.TREND_FEEDS:
         probe(f"{label} ({geo})", f"https://trends.google.com/trending/rss?geo={geo}",
               feeds.parse_trends)
-    print("Google News (sample)")
-    for q, (hl, ceid), when in config.STANDING_QUERIES[:4]:
+    print("Google News (sample of standing + district queries)")
+    for q, (hl, ceid), when in config.STANDING_QUERIES[:3] + config.DISTRICT_QUERIES[:2]:
         probe(f"{q} when:{when}", feeds.google_news_url(q, hl, ceid, when))
+    print("Google News geo sections")
+    for name, url in config.GEO_FEEDS:
+        probe(name, url)
     print("Publishers")
     for name, _lang, url in config.PUBLISHER_FEEDS:
+        probe(name, url)
+    print("Social")
+    for name, url in config.SOCIAL_FEEDS:
         probe(name, url)
     state = "enabled" if config.YOUTUBE_ENABLED else "disabled — probing anyway"
     print(f"YouTube ({state})")
     alive = 0
     for name, cid in config.YOUTUBE_CHANNELS:
-        body = net.fetch(f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}", retries=1)
-        count = len(feeds.parse_items(body)) if body else 0
-        alive += 1 if count else 0
-        print(f"  {'ok  ' if count else 'DEAD'} {count:>4}  {name}")
+        alive += 1 if probe(name, f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}") else 0
     if alive and not config.YOUTUBE_ENABLED:
         print("  -> the feed is answering again: set YOUTUBE_ENABLED = True in radar/config.py")
+    print("Omarchy theme")
+    from . import theme
+    t = theme.current()
+    print(f"  {t['source']:4}       {t['name']} ({t['mode']})")
 
 
 if __name__ == "__main__":

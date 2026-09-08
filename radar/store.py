@@ -50,11 +50,37 @@ CREATE TABLE IF NOT EXISTS trends (
     geo        TEXT NOT NULL,
     traffic    INTEGER DEFAULT 0,
     prev_traffic INTEGER DEFAULT 0,
+    rank       INTEGER DEFAULT 0,
+    prev_rank  INTEGER DEFAULT 0,
+    peak_traffic INTEGER DEFAULT 0,
     first_seen TEXT NOT NULL,
     last_seen  TEXT NOT NULL,
     picture    TEXT,
     entities   TEXT,
     UNIQUE(query, geo)
+);
+
+CREATE TABLE IF NOT EXISTS trend_history (
+    query   TEXT NOT NULL,
+    geo     TEXT NOT NULL,
+    ts      TEXT NOT NULL,
+    traffic INTEGER,
+    rank    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_trend_hist ON trend_history(query, geo, ts);
+
+CREATE TABLE IF NOT EXISTS source_health (
+    name       TEXT PRIMARY KEY,
+    url        TEXT,
+    kind       TEXT,
+    last_ok    TEXT,
+    last_fail  TEXT,
+    last_error TEXT,
+    failures   INTEGER DEFAULT 0,   -- consecutive
+    last_count INTEGER DEFAULT 0,
+    last_ms    INTEGER DEFAULT 0,
+    total_ok   INTEGER DEFAULT 0,
+    total_fail INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS cluster_history (
@@ -95,8 +121,59 @@ def conn() -> sqlite3.Connection:
     return c
 
 
+# Columns added after the first release. init() adds any that are missing so
+# an existing radar.db keeps working across upgrades without being rebuilt.
+_MIGRATIONS = {
+    "trends": [
+        ("rank", "INTEGER DEFAULT 0"),
+        ("prev_rank", "INTEGER DEFAULT 0"),
+        ("peak_traffic", "INTEGER DEFAULT 0"),
+    ],
+    "clusters": [
+        ("beat", "TEXT"),
+    ],
+}
+
+
 def init() -> None:
-    conn().executescript(SCHEMA)
+    c = conn()
+    c.executescript(SCHEMA)
+    for table, columns in _MIGRATIONS.items():
+        have = {row["name"] for row in c.execute(f"PRAGMA table_info({table})")}
+        for name, decl in columns:
+            if name not in have:
+                c.execute(f"ALTER TABLE {table} ADD COLUMN {name} {decl}")
+
+
+def record_source(name: str, url: str, kind: str, ok: bool,
+                  count: int = 0, ms: int = 0, error: str = "") -> None:
+    """One line per source per poll: the raw material for the health strip."""
+    now = now_iso()
+    c = conn()
+    c.execute(
+        "INSERT OR IGNORE INTO source_health(name, url, kind) VALUES (?,?,?)",
+        (name, url, kind),
+    )
+    if ok:
+        c.execute(
+            """UPDATE source_health SET url=?, kind=?, last_ok=?, failures=0,
+               last_count=?, last_ms=?, total_ok=total_ok+1, last_error=''
+               WHERE name=?""",
+            (url, kind, now, count, ms, name),
+        )
+    else:
+        c.execute(
+            """UPDATE source_health SET url=?, kind=?, last_fail=?, last_error=?,
+               failures=failures+1, last_ms=?, total_fail=total_fail+1 WHERE name=?""",
+            (url, kind, now, error[:120], ms, name),
+        )
+
+
+def source_health() -> list[dict]:
+    rows = conn().execute(
+        "SELECT * FROM source_health ORDER BY failures DESC, name"
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def now_iso() -> str:
@@ -134,6 +211,7 @@ def housekeeping() -> None:
     hist_cutoff = (datetime.now(timezone.utc)
                    - timedelta(days=config.HISTORY_RETENTION_DAYS)).isoformat()
     c.execute("DELETE FROM cluster_history WHERE ts < ?", (hist_cutoff,))
+    c.execute("DELETE FROM trend_history WHERE ts < ?", (hist_cutoff,))
     c.execute("DELETE FROM alerts WHERE ts < ?", (cutoff,))
     c.execute(
         "DELETE FROM clusters WHERE last_seen < ? "
@@ -141,3 +219,4 @@ def housekeeping() -> None:
         (cutoff,),
     )
     c.execute("DELETE FROM trends WHERE last_seen < ?", (cutoff,))
+    c.execute("PRAGMA wal_checkpoint(TRUNCATE)")

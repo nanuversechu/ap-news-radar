@@ -26,6 +26,18 @@ USER_AGENT = (
 HOST_DELAY = 1.2
 FETCH_TIMEOUT = 25
 MAX_PARALLEL = 6
+# How long to leave a host alone after it pushes back. A 429 obeyed now is a
+# ban avoided later.
+COOLDOWN_429 = 30 * 60
+COOLDOWN_5XX = 5 * 60
+
+# --------------------------------------------------------------------------
+# Omarchy — the dashboard reads the live desktop theme from here.
+# --------------------------------------------------------------------------
+
+OMARCHY_STATE_DIR = os.environ.get(
+    "OMARCHY_STATE", os.path.expanduser("~/.local/state/omarchy/current"))
+OMARCHY_THEME_DIR = os.path.join(OMARCHY_STATE_DIR, "theme")
 
 # --------------------------------------------------------------------------
 # Poll cadence (seconds)
@@ -112,6 +124,44 @@ STANDING_QUERIES: list[tuple[str, tuple[str, str], str]] = [
     ("Andhra Pradesh government GO announcement", _EN, "2h"),
 ]
 
+# District sweeps. Thirteen more requests to one host every tick would add load
+# without adding much signal, so a third of this list runs each tick: every
+# district is covered every 15 minutes at constant per-tick cost.
+DISTRICT_QUERIES: list[tuple[str, tuple[str, str], str]] = [
+    ("Guntur", _EN, "2h"), ("Nellore", _EN, "2h"), ("Kurnool", _EN, "2h"),
+    ("Tirupati", _EN, "2h"), ("Kakinada", _EN, "2h"), ("Rajamahendravaram", _EN, "2h"),
+    ("Anantapur", _EN, "2h"), ("Kadapa", _EN, "2h"), ("Srikakulam", _EN, "2h"),
+    ("Vizianagaram", _EN, "2h"), ("Eluru", _EN, "2h"), ("Ongole", _EN, "2h"),
+    ("గుంటూరు", _TE, "2h"), ("నెల్లూరు", _TE, "2h"), ("కర్నూలు", _TE, "2h"),
+    ("తిరుపతి", _TE, "2h"), ("కాకినాడ", _TE, "2h"), ("రాజమహేంద్రవరం", _TE, "2h"),
+]
+DISTRICT_ROTATION = 3
+
+# Google News "geo" sections. Only these three AP places return anything; the
+# other twelve districts answer with an empty feed. They ignore `when:`, so the
+# ingest gate does the freshness work.
+GEO_FEEDS: list[tuple[str, str]] = [
+    ("Google News · Visakhapatnam", "https://news.google.com/rss/headlines/section/geo/Visakhapatnam?hl=en-IN&gl=IN&ceid=IN:en"),
+    ("Google News · Amaravati", "https://news.google.com/rss/headlines/section/geo/Amaravati?hl=en-IN&gl=IN&ceid=IN:en"),
+    ("Google News · Vijayawada", "https://news.google.com/rss/headlines/section/geo/Vijayawada?hl=en-IN&gl=IN&ceid=IN:en"),
+]
+
+# Reddit's unauthenticated RSS is real but tight: three subreddit fetches in a
+# row drew a 429. One feed, every 15 minutes, with the host cooled down on any
+# push-back, stays well inside that. Kind "social" so the desk can tell chatter
+# from reporting.
+SOCIAL_FEEDS: list[tuple[str, str]] = [
+    ("Reddit r/andhrapradesh", "https://www.reddit.com/r/andhrapradesh/new.rss"),
+]
+
+# Direction arrows compare a trend against this long ago, not the last poll.
+TREND_LOOKBACK_MIN = 30
+# Stories likewise, and a score has to move this much to earn an arrow.
+STORY_LOOKBACK_MIN = 15
+STORY_DELTA = 6.0
+# A query that vanished from the feed within this window is shown as trailing.
+TRAILING_WINDOW_MIN = 90
+
 # When a Google Trends query is rising, we immediately search news for it.
 # This is what turns "people are searching X" into "here is the coverage of X".
 TREND_CHASE_WINDOW = "2h"
@@ -132,8 +182,20 @@ PUBLISHER_FEEDS: list[tuple[str, str, str]] = [
     ("Deccan Chronicle", "en", "https://www.deccanchronicle.com/rss_feed/"),
     ("Times of India Vijayawada", "en", "https://timesofindia.indiatimes.com/rssfeeds/-2128816011.cms"),
     ("Times of India Visakhapatnam", "en", "https://timesofindia.indiatimes.com/rssfeeds/-2128839596.cms"),
+    # Added 8 Sep 2026, each verified live and dated at the time.
+    ("TV9 Telugu", "te", "https://tv9telugu.com/feed"),
+    ("Sakshi", "te", "https://www.sakshi.com/rss.xml"),
+    ("GreatAndhra", "en", "https://www.greatandhra.com/rss"),
+    ("Prabha News", "te", "https://www.prabhanews.com/feed/"),
+    ("Vaartha", "te", "https://www.vaartha.com/feed/"),
+    ("Oneindia Telugu", "te", "https://telugu.oneindia.com/rss/telugu-news-fb.xml"),
+    ("The Hindu Vijayawada", "en", "https://www.thehindu.com/news/cities/Vijayawada/feeder/default.rss"),
+    ("The Hindu Visakhapatnam", "en", "https://www.thehindu.com/news/cities/Visakhapatnam/feeder/default.rss"),
     # PIB's ViewRss.aspx answers 200 with an empty body, so official releases
     # are covered by the site: query in STANDING_QUERIES instead.
+    # Tried and dead on 8 Sep 2026: New Indian Express, Samayam, Zee Telugu,
+    # News18 Telugu, Deccan Herald, Indian Express Vijayawada, AP7AM, TV5 web,
+    # Andhra Prabha, HT Telugu, Eenadu, and every Sakshi sub-feed.
 ]
 
 # --------------------------------------------------------------------------
@@ -252,6 +314,26 @@ LEXICON: dict[str, tuple[str, list[str]]] = {
     "pension": ("topic", ["pension", "welfare scheme", "పింఛను", "పెన్షన్"]),
     "farmer": ("topic", ["farmer", "farmers", "crop", "paddy", "రైతు", "రైతులు", "పంట"]),
 }
+
+# --------------------------------------------------------------------------
+# Beats — a one-word label per story so a desk can scan a board by colour.
+# First match wins, so the order is the priority: a politician commenting on
+# a flood is a weather story.
+# --------------------------------------------------------------------------
+
+BEATS: list[tuple[str, set[str]]] = [
+    ("weather", {"rain", "flood", "cyclone", "heatwave", "imd", "godavari", "krishna_river"}),
+    ("crime",   {"arrest", "murder", "accident", "liquor_scam", "court"}),
+    ("faith",   {"tirumala", "ttd"}),
+    ("exams",   {"results", "exam", "jobs", "appsc"}),
+    ("infra",   {"polavaram", "power_cut", "bhogapuram", "apsrtc"}),
+    ("civic",   {"protest", "pension", "farmer"}),
+    ("cinema",  {"cinema"}),
+    ("sport",   {"cricket"}),
+    ("politics", {"chandrababu_naidu", "jagan", "pawan_kalyan", "lokesh", "sharmila",
+                  "naga_babu", "modi", "revanth", "kcr", "tdp", "ysrcp", "janasena",
+                  "bjp", "congress"}),
+]
 
 # Words too common to be worth clustering on.
 STOPWORDS = set("""

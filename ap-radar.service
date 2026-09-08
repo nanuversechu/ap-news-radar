@@ -6,7 +6,12 @@ Documentation=file://%h/ap-news-radar/README.md
 After=network.target
 
 [Service]
-Type=simple
+# The poller heartbeats to systemd every 30 s (radar/watchdog.py). If it stops
+# — a hung fetch, a deadlock — systemd restarts the service instead of leaving
+# a live-looking process that has quietly stopped polling.
+Type=notify
+WatchdogSec=600
+NotifyAccess=main
 WorkingDirectory=%h/ap-news-radar
 ExecStart=/usr/bin/python3 -m radar
 Environment=PYTHONUNBUFFERED=1

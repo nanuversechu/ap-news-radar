@@ -70,15 +70,35 @@ stop the service first, or the two will fight over the port.
 
 ## The look
 
-Terminal, on purpose: monospace throughout, square corners everywhere, meters
-drawn with block characters (`███·······`) rather than graphics, and a status
-bar in the manner of tmux. The palette is Rose Pine — muted rose, gold, pine
-and foam — which follows your system light/dark setting.
+It wears your Omarchy theme. The server reads
+`~/.local/state/omarchy/current/theme/colors.toml` on every refresh, so
+`omarchy theme set …` restyles the dashboard within thirty seconds, no restart.
+Font is JetBrainsMono Nerd Font, the one your terminal uses. Square corners
+everywhere, a waybar-style status bar, meters drawn in block characters.
 
-The accent values are darkened from the published Rose Pine set. Those are
-tuned for large blocks of syntax-highlighted code; as small text they fall to
-around 2:1, which made the score the least readable thing on screen. Every
-text role now clears 4.78:1 in both themes.
+Generated themes can be muddy — one names an olive "red" — and a dim colour
+on a dark ground is unreadable at 13 px. So every text role is contrast-checked
+against the theme background and nudged in lightness until it clears 4.5:1,
+hue and saturation kept. The desktop keeps its palette; the text stays legible.
+Without Omarchy it falls back to Rose Pine.
+
+Direction is never colour alone: **▲ up · ▼ down · ● new · → flat** on
+every trend and story, so it reads even on a palette where red and green agree.
+
+### On the board
+
+- **Searching now** — each trend carries an arrow against thirty minutes ago
+  (traffic bucket or rank), the count `3▲ 1▼` in the section rule, and AP/TG/IN.
+- **Trailing** — queries that were trending and have dropped off the feed in
+  the last 90 minutes, with what they peaked at. A story that has stopped rising
+  is as useful to know as one that has started.
+- **Beats** — every story is tagged `weather · crime · faith · exams · infra ·
+  civic · cinema · sport · politics`, coloured from the theme, and the tags are
+  filters. A politician commenting on a flood is a weather story.
+- **Score arrows** with the delta (`▲ +15`) against fifteen minutes ago, and
+  `+2` next to the outlet count when more newsrooms have picked it up.
+- **Keyboard**: `/` filter · `j` `k` move · `o` open · `1`–`5` tabs · `s`
+  sources · `esc` clear.
 
 ## What it watches
 
@@ -101,20 +121,53 @@ alert age limit, the acceleration comparison — keys off that one number.
 | What AP is searching | Google Trends RSS, `geo=IN-AP` | free, keyless | 5 min |
 | Same for Telangana + India | Google Trends RSS, `IN-TG` / `IN` | free, keyless | 5 min |
 | Breaking coverage | Google News RSS, 30 standing queries in Telugu and English, all `when:2h` | free, keyless | 5 min |
+| District sweeps | 18 more Google News queries, a third each tick | free, keyless | every district every 15 min |
 | Coverage of what's rising | Google News searched for each rising trend | free, keyless | 5 min |
-| AP newspapers | 9 publisher RSS feeds (below) | free | 15 min |
+| City sections | Google News geo feeds for Visakhapatnam, Amaravati, Vijayawada | free, keyless | 15 min |
+| AP newspapers | 17 publisher RSS feeds (below) | free | 15 min |
+| Chatter | Reddit r/andhrapradesh (marked ◆ social) | free, keyless | 15 min |
 | ~~Telugu TV~~ | ~~7 YouTube channel RSS feeds~~ | **dead since 18 Aug 2026** — see below | — |
 
-The nine publisher feeds: **The Hindu (AP)**, **NTV Telugu**, **10TV**,
-**Gulte**, **Telugu360**, **Hans India (AP)**, **Deccan Chronicle**, **Times of
-India** (Vijayawada and Visakhapatnam). Government releases arrive through a
-`site:pib.gov.in` search feed, since PIB's own RSS is broken.
+The seventeen publisher feeds: **The Hindu** (AP, Vijayawada, Visakhapatnam),
+**TV9 Telugu**, **NTV Telugu**, **10TV**, **Sakshi**, **GreatAndhra**,
+**Gulte**, **Telugu360**, **Vaartha**, **Prabha News**, **Oneindia Telugu**,
+**Hans India (AP)**, **Deccan Chronicle**, **Times of India** (Vijayawada and
+Visakhapatnam). Government releases arrive through a `site:pib.gov.in` search
+feed, since PIB's own RSS is broken.
+
+Every source's outcome is recorded each poll. The status bar shows `src 24/24`;
+click it (or press `s`) for the table — items, latency, last success, and the
+error when there is one. A source is "ok" only when it answered *and* returned
+something parseable; a 200 with an empty body counts as a failure.
 
 Roughly 185 distinct outlets reach the board in a given tick, because the
-Google News queries pull from far more mastheads than the nine we poll directly.
+Google News queries pull from far more mastheads than the seventeen we poll directly.
 
 Everything is polled politely: one request per host per 1.2 s, six hosts in
 parallel, a real User-Agent with a contact address.
+
+### Built to stay up
+
+- **A hung poller gets restarted, not admired.** The service runs as
+  `Type=notify` with `WatchdogSec=600`; the poll loop heartbeats to systemd
+  every 30 seconds, including while sleeping between ticks. If the heartbeat
+  stops — a socket that never returns, a deadlock — systemd kills and restarts
+  it. `Restart=always` alone only helps when a process actually dies.
+- **No single fetch can stall a tick.** Each request is bounded in time and a
+  hung one is recorded as such and skipped.
+- **Push-back is obeyed.** A 429 puts that host on a 30-minute cooldown
+  (honouring `Retry-After` when sent); repeated 5xx, five minutes. The cooldown
+  shows in the status bar. This is what stops a temporary limit becoming a ban.
+- **Last good data survives a bad tick.** If Google Trends or Google News comes
+  back empty, the previous board stays up and a notice says which sources were
+  degraded — the page is told, not blanked.
+- **Staleness is loud.** If no tick has completed in three intervals the live
+  dot becomes a red `▲ STALE 14m` segment. The bar also counts down to the next
+  poll, so a healthy radar is visibly healthy.
+- **The poller thread is checked for life** on every health request and revived
+  if it has died. `/api/health` returns 503 if it cannot be.
+- **The database migrates itself** forward when new columns are added, so an
+  upgrade is a `git pull` and a restart.
 
 ### Deliberately left out
 
@@ -220,8 +273,13 @@ cover that case.
 python3 tests/test_matching.py
 ```
 
-`check` is the one to run if the board ever looks thin — publishers change
-their RSS paths without warning.
+`check` probes every configured source — trends, news queries, geo sections,
+publishers, social, YouTube — with status and latency, and reports which
+Omarchy theme it sees. Run it if the board ever looks thin.
+
+```bash
+python3 tests/test_reliability.py
+```
 
 ## Optional extras
 
