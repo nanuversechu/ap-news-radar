@@ -1,0 +1,31 @@
+[Unit]
+Description=Andhra Pradesh news radar
+Documentation=file://%h/ap-news-radar/README.md
+# The poller already survives a dead network on its own (a failed fetch is
+# skipped and retried next tick), so we do not block startup waiting for it.
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/ap-news-radar
+ExecStart=/usr/bin/python3 -m radar
+Environment=PYTHONUNBUFFERED=1
+
+# Optional extras — uncomment and fill in, then: systemctl --user restart ap-radar
+Environment=RADAR_CONTACT=you@example.com
+# Environment=GROQ_API_KEY=gsk_...
+# Environment=RADAR_TELEGRAM_TOKEN=123456:ABC...
+# Environment=RADAR_TELEGRAM_CHAT=-1001234567890
+
+Restart=always
+RestartSec=15
+# If it crashes in a tight loop, back off instead of hammering the sources.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ap-radar
+
+[Install]
+WantedBy=default.target
