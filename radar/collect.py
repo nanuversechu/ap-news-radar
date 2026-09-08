@@ -311,7 +311,8 @@ def collect_google_news(queries: list[tuple[str, tuple[str, str], str]],
                          f"{total - answered}/{total} queries failed"
                          + (f" ({worst.error})" if worst and worst.error else ""))
     store.record_source(label, summary.url, "news", answered >= max(1, total * 0.5),
-                        count=len(out), ms=summary.ms, error=summary.error)
+                        count=len(out), ms=summary.ms, error=summary.error,
+                        fresh=_fresh_count(out))
     return out
 
 
