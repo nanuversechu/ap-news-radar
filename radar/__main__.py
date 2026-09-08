@@ -64,9 +64,17 @@ def _check() -> None:
     print("Google News (sample of standing + district queries)")
     for q, (hl, ceid), when in config.STANDING_QUERIES[:3] + config.DISTRICT_QUERIES[:2]:
         probe(f"{q} when:{when}", feeds.google_news_url(q, hl, ceid, when))
-    print("Google News geo sections")
-    for name, url in config.GEO_FEEDS:
+    print("Google News front page and sections")
+    for name, url in config.GOOGLE_NEWS_TOP + config.GOOGLE_NEWS_TOPICS + config.GEO_FEEDS:
         probe(name, url)
+    print("Reading signals")
+    for name, url in config.READING_FEEDS:
+        probe(name, url)
+    from datetime import datetime, timedelta, timezone
+    y = datetime.now(timezone.utc) - timedelta(days=1)
+    for proj, label in config.WIKI_PROJECTS:
+        res = net.fetch_result(f"https://wikimedia.org/api/rest_v1/metrics/pageviews/top/{proj}/all-access/{y:%Y}/{y:%m}/{y:%d}", retries=1)
+        print(f"  {'ok  ' if res.ok else 'DEAD'} {'':>4}  {res.ms:>5}ms  {label} top pages (yesterday){'' if res.ok else '  (' + (res.error or str(res.status)) + ')'}")
     print("Publishers")
     for name, _lang, url in config.PUBLISHER_FEEDS:
         probe(name, url)

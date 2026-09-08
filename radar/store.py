@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS items (
     published_at TEXT,
     first_seen   TEXT NOT NULL,
     entities     TEXT,              -- comma separated lexicon keys
-    cluster_id   INTEGER
+    cluster_id   INTEGER,
+    rank         INTEGER            -- position in a ranked feed (Google top stories), else NULL
 );
 CREATE INDEX IF NOT EXISTS idx_items_first_seen ON items(first_seen);
 CREATE INDEX IF NOT EXISTS idx_items_cluster    ON items(cluster_id);
@@ -80,7 +81,19 @@ CREATE TABLE IF NOT EXISTS source_health (
     last_count INTEGER DEFAULT 0,
     last_ms    INTEGER DEFAULT 0,
     total_ok   INTEGER DEFAULT 0,
-    total_fail INTEGER DEFAULT 0
+    total_fail INTEGER DEFAULT 0,
+    fresh_count INTEGER DEFAULT 0,  -- items inside the freshness window, last poll
+    last_fresh TEXT                 -- when this source last produced a fresh item
+);
+
+CREATE TABLE IF NOT EXISTS reading (
+    source  TEXT NOT NULL,
+    title   TEXT NOT NULL,
+    url     TEXT,
+    rank    INTEGER,
+    views   INTEGER,
+    ts      TEXT NOT NULL,
+    PRIMARY KEY (source, title)
 );
 
 CREATE TABLE IF NOT EXISTS cluster_history (
@@ -129,8 +142,12 @@ _MIGRATIONS = {
         ("prev_rank", "INTEGER DEFAULT 0"),
         ("peak_traffic", "INTEGER DEFAULT 0"),
     ],
-    "clusters": [
-        ("beat", "TEXT"),
+    "items": [
+        ("rank", "INTEGER"),
+    ],
+    "source_health": [
+        ("fresh_count", "INTEGER DEFAULT 0"),
+        ("last_fresh", "TEXT"),
     ],
 }
 
@@ -146,8 +163,14 @@ def init() -> None:
 
 
 def record_source(name: str, url: str, kind: str, ok: bool,
-                  count: int = 0, ms: int = 0, error: str = "") -> None:
-    """One line per source per poll: the raw material for the health strip."""
+                  count: int = 0, ms: int = 0, error: str = "",
+                  fresh: int = 0) -> None:
+    """One line per source per poll: the raw material for the health strip.
+
+    `fresh` is how many of the items were inside the freshness window. A feed
+    that answers every time but has not produced a fresh item in a day is, for
+    this radar's purposes, dead — and the strip says so.
+    """
     now = now_iso()
     c = conn()
     c.execute(
@@ -157,9 +180,10 @@ def record_source(name: str, url: str, kind: str, ok: bool,
     if ok:
         c.execute(
             """UPDATE source_health SET url=?, kind=?, last_ok=?, failures=0,
-               last_count=?, last_ms=?, total_ok=total_ok+1, last_error=''
+               last_count=?, last_ms=?, total_ok=total_ok+1, last_error='',
+               fresh_count=?, last_fresh=CASE WHEN ?>0 THEN ? ELSE last_fresh END
                WHERE name=?""",
-            (url, kind, now, count, ms, name),
+            (url, kind, now, count, ms, fresh, fresh, now, name),
         )
     else:
         c.execute(
@@ -219,4 +243,5 @@ def housekeeping() -> None:
         (cutoff,),
     )
     c.execute("DELETE FROM trends WHERE last_seen < ?", (cutoff,))
+    c.execute("DELETE FROM reading WHERE ts < ?", (hist_cutoff,))
     c.execute("PRAGMA wal_checkpoint(TRUNCATE)")

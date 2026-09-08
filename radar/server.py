@@ -2,7 +2,10 @@
 
 The page takes its colours from the live Omarchy theme (see theme.py) and
 re-reads them every refresh, so `omarchy theme set` restyles it in seconds.
-Everything is drawn boxy and monospace, like the rest of the desktop.
+
+It is organised around one question: what are people in Andhra Pradesh
+searching for and reading right now, and is it covered. Every search shows
+its own coverage; clicking one narrows the board to the stories that answer it.
 """
 
 from __future__ import annotations
@@ -34,10 +37,8 @@ __THEME_VARS__
   button,input{font:inherit; color:inherit}
 
   /* ---- top bar, in the manner of waybar ---- */
-  .bar{
-    display:flex; align-items:stretch; flex-wrap:wrap; position:sticky; top:0; z-index:10;
-    background:var(--panel); border-bottom:1px solid var(--line); font-size:12.5px;
-  }
+  .bar{display:flex; align-items:stretch; flex-wrap:wrap; position:sticky; top:0; z-index:10;
+    background:var(--panel); border-bottom:1px solid var(--line); font-size:12.5px}
   .seg{padding:5px 12px; border-right:1px solid var(--line); white-space:nowrap;
     display:flex; align-items:center; gap:7px}
   .seg.name{background:var(--accent); color:var(--on_accent); font-weight:700; letter-spacing:.08em}
@@ -50,7 +51,6 @@ __THEME_VARS__
   .dot.live{animation:pulse 2.2s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.35}}
   .stale{background:var(--down); color:var(--bg); font-weight:700}
-
   .notice{padding:6px 14px; font-size:12.5px; border-bottom:1px solid var(--line);
     background:var(--panel); color:var(--warm)}
   .notice.bad{color:var(--down)}
@@ -60,7 +60,7 @@ __THEME_VARS__
   #srcpanel table{border-collapse:collapse; width:100%; max-width:1000px; margin:0 auto}
   #srcpanel td{padding:3px 12px; border-bottom:1px solid var(--line); white-space:nowrap}
   #srcpanel td.err{color:var(--down); white-space:normal}
-  #srcpanel td.ok{color:var(--up)}
+  #srcpanel td.ok{color:var(--up)} #srcpanel td.warn{color:var(--warm)}
   #srcpanel td.num{text-align:right; color:var(--muted); font-variant-numeric:tabular-nums}
 
   .wrap{max-width:1000px; margin:0 auto; padding:18px 18px 80px}
@@ -71,26 +71,29 @@ __THEME_VARS__
   .sec b{font-weight:700; font-size:11.5px; letter-spacing:.14em; text-transform:uppercase;
     color:var(--muted); white-space:nowrap}
   .sec .rule{flex:1; border-top:1px solid var(--line)}
-  .sec .note{font-size:11.5px; color:var(--muted); white-space:nowrap}
-  .sec .n{color:var(--muted); font-size:11.5px}
+  .sec .note,.sec .n{font-size:11.5px; color:var(--muted); white-space:nowrap}
 
-  /* ---- arrows ---- */
   .ar{display:inline-block; width:1.2ch; font-weight:700}
   .ar.up,.up-c{color:var(--up)} .ar.down,.down-c{color:var(--down)}
   .ar.new{color:var(--accent)} .ar.flat{color:var(--muted)}
+  .ap{color:var(--accent); font-size:10.5px; letter-spacing:.08em; font-weight:700}
+  .warn-c{color:var(--warm)}
 
   /* ---- trend cells ---- */
-  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(186px,1fr));
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
     border-top:1px solid var(--line); border-left:1px solid var(--line)}
   .cell{border-right:1px solid var(--line); border-bottom:1px solid var(--line);
-    padding:7px 10px; text-decoration:none; display:block}
+    padding:7px 10px; display:block; cursor:pointer; position:relative}
   .cell:hover{background:var(--sel)}
-  .cell .q{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px}
+  .cell.on{background:var(--sel); outline:1px solid var(--accent); outline-offset:-1px}
+  .cell .q{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:13px; padding-right:16px}
   .cell .m{font-size:11.5px; color:var(--muted); margin-top:1px; display:flex;
     justify-content:space-between; gap:8px}
-  .cell .meter{letter-spacing:-1px; color:var(--accent)}
-  .cell.up .meter{color:var(--up)} .cell.down .meter{color:var(--down)}
-  .cell .geo{font-size:10.5px; letter-spacing:.06em}
+  .cell .cov{white-space:nowrap}
+  .cell .cov.none{color:var(--warm)}
+  .cell .ext{position:absolute; right:6px; top:5px; font-size:11px; color:var(--muted);
+    text-decoration:none; padding:0 3px}
+  .cell .ext:hover{color:var(--accent)}
 
   /* ---- trailing chips ---- */
   .chips{display:flex; flex-wrap:wrap; border-top:1px solid var(--line); border-left:1px solid var(--line)}
@@ -99,14 +102,19 @@ __THEME_VARS__
   .chip:hover{background:var(--sel); color:var(--text)}
   .chip b{color:var(--text); font-weight:500}
 
-  /* ---- gap rows ---- */
-  .gap{display:flex; gap:14px; align-items:baseline; text-decoration:none; padding:5px 11px;
-    border:1px solid var(--line); border-top:none}
-  .gap:first-child{border-top:1px solid var(--line)}
-  .gap:hover{background:var(--sel)}
-  .gap .flag{color:var(--warm); font-size:11px; letter-spacing:.08em; width:11ch; white-space:nowrap}
-  .gap .q{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-  .gap .n{margin-left:auto; color:var(--muted); font-size:11.5px; white-space:nowrap}
+  /* ---- reading rows ---- */
+  .rd{display:grid; grid-template-columns:7ch 1fr auto; gap:0 12px; align-items:baseline;
+    padding:4px 11px; border:1px solid var(--line); border-top:none; text-decoration:none}
+  .rd:first-child,.rd.first{border-top:1px solid var(--line)}
+  .rd:hover{background:var(--sel)}
+  .rd .r{color:var(--muted); font-size:11.5px; font-variant-numeric:tabular-nums; text-align:right}
+  .rd .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rd .t.dim{color:var(--muted)}
+  .rd .c{font-size:11.5px; white-space:nowrap; color:var(--muted)}
+  .rd .c.yes{color:var(--up)}
+  .rdhead{padding:6px 11px 2px; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--muted); display:flex; gap:10px; align-items:baseline}
+  .rdhead i{font-style:normal; letter-spacing:0; text-transform:none; font-size:11.5px}
 
   /* ---- toolbar ---- */
   .tools{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; align-items:stretch}
@@ -116,12 +124,14 @@ __THEME_VARS__
   .tabs button:last-child{border-right:none}
   .tabs button:hover{background:var(--sel); color:var(--text)}
   .tabs button.on{background:var(--accent); color:var(--on_accent); font-weight:700}
-  .tabs.beats button.on{background:var(--sel); color:var(--text)}
-  .tabs.beats button.on::before{content:"■ "}
   .search{border:1px solid var(--line); background:transparent; padding:3px 10px; font-size:12px;
     min-width:200px; outline:none}
   .search:focus{border-color:var(--accent)}
   .search::placeholder{color:var(--muted)}
+  .pill{display:flex; align-items:center; gap:8px; border:1px solid var(--accent); padding:2px 10px;
+    font-size:12px; color:var(--accent)}
+  .pill button{background:none; border:none; cursor:pointer; color:var(--muted); padding:0 2px}
+  .pill button:hover{color:var(--down)}
 
   /* ---- story rows ---- */
   .row{display:grid; grid-template-columns:7ch 1fr; border:1px solid var(--line); border-top:none}
@@ -135,19 +145,13 @@ __THEME_VARS__
   .gutter .sp{font-size:10px; color:var(--muted); line-height:1; margin-top:2px}
   .body{padding:8px 12px; min-width:0}
   .ttl{margin:0; font-size:13.5px; font-weight:600; line-height:1.5}
-  .tag{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; font-weight:700;
-    margin-right:8px; vertical-align:1px}
   .gloss{color:var(--muted); font-size:12.5px}
   .meta{color:var(--muted); font-size:12px; margin-top:2px}
   .meta .k{color:var(--text)}
   .why{color:var(--accent); font-size:12px; margin-top:3px}
+  .fp{font-size:10.5px; letter-spacing:.06em; color:var(--accent); margin-left:8px; font-weight:700}
   .bar-t{letter-spacing:-.5px}
   .t-hot{color:var(--hot)} .t-warm{color:var(--warm)} .t-cool{color:var(--cool)}
-  .b-weather{color:var(--weather)} .b-crime{color:var(--crime)} .b-politics{color:var(--politics)}
-  .b-cinema{color:var(--cinema)} .b-faith{color:var(--faith)} .b-exams{color:var(--exams)}
-  .b-infra{color:var(--infra)} .b-civic{color:var(--civic)} .b-sport{color:var(--sport)}
-  .b-general{color:var(--muted)}
-
   details{margin-top:4px}
   summary{cursor:pointer; list-style:none; color:var(--muted); font-size:12px}
   summary::-webkit-details-marker{display:none}
@@ -156,7 +160,7 @@ __THEME_VARS__
   .links a{display:flex; gap:10px; align-items:baseline; padding:3px 0; text-decoration:none;
     color:var(--muted); font-size:12.5px}
   .links a:hover{color:var(--text)}
-  .links .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .links .t{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0}
   .links .o{margin-left:auto; color:var(--muted); font-size:11.5px; white-space:nowrap}
 
   .empty{color:var(--muted); font-size:12.5px; padding:9px 11px; border:1px solid var(--line)}
@@ -178,7 +182,7 @@ __THEME_VARS__
 <div id="srcpanel" hidden></div>
 
 <div class="wrap">
-  <div class="sec"><b>Searching now</b><span class="note">what Andhra Pradesh is typing into Google</span>
+  <div class="sec"><b>Searching now</b><span class="note">Andhra Pradesh · click a search to see what answers it</span>
     <span class="rule"></span><span class="n" id="n-tr"></span></div>
   <div class="grid" id="trends"></div>
 
@@ -186,11 +190,12 @@ __THEME_VARS__
     <span class="rule"></span><span class="n" id="n-trail"></span></div>
   <div class="chips" id="trailing"></div>
 
-  <div class="sec"><b>Rising · thin coverage</b><span class="note">nobody has written this yet</span>
-    <span class="rule"></span></div>
-  <div id="gaps"></div>
+  <div class="sec"><b>Reading</b><span class="note">most-read lists · national, AP items marked</span>
+    <span class="rule"></span><span class="n" id="n-rd"></span></div>
+  <div id="reading"></div>
 
-  <div class="sec"><b>Story board</b><span class="rule"></span><span class="n" id="n-board"></span></div>
+  <div class="sec"><b>Story board</b><span class="note">everything published in the last 2 hours, scored</span>
+    <span class="rule"></span><span class="n" id="n-board"></span></div>
   <div class="tools">
     <div class="tabs" id="filters">
       <button data-f="all" class="on">all</button>
@@ -199,7 +204,7 @@ __THEME_VARS__
       <button data-f="trend">search-backed</button>
       <button data-f="moving">moving</button>
     </div>
-    <div class="tabs beats" id="beats"></div>
+    <div class="pill" id="pill" hidden><span id="pill-t"></span><button id="pill-x" title="clear">×</button></div>
     <input class="search" id="q" placeholder="/ filter…" autocomplete="off" spellcheck="false">
   </div>
   <div id="board"></div>
@@ -207,8 +212,7 @@ __THEME_VARS__
 </div>
 
 <script>
-let FILTER='all', BEAT=null, Q='', DATA=null, CUR=-1;
-const BEAT_LIST=['weather','crime','faith','exams','infra','civic','cinema','sport','politics','general'];
+let FILTER='all', Q='', DATA=null, CUR=-1, TREND=null;   // TREND = {query, ids:Set}
 
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ago = m => m<1?'now' : m<60?m+'m' : m<1440?Math.round(m/60)+'h' : Math.round(m/1440)+'d';
@@ -216,7 +220,7 @@ const tier = s => s>=70?'hot' : s>=48?'warm' : 'cool';
 const fmtK = n => !n?'—' : n>=1e6?(n/1e6).toFixed(1)+'M+' : n>=1000?Math.round(n/1000)+'K+' : n+'+';
 const BLOCKS='▁▂▃▄▅▆▇█';
 const bar = (v,w) => { const on=Math.max(0,Math.min(w,Math.round(v*w))); return '█'.repeat(on)+'·'.repeat(w-on); };
-const spark = b => ['trend','acceleration','corroboration','velocity','freshness']
+const spark = b => ['trend','acceleration','corroboration','prominence','velocity','freshness']
   .map(k => BLOCKS[Math.max(0,Math.min(7,Math.round(((b||{})[k]||0)*7)))]).join('');
 const ARROW = {up:'▲', down:'▼', new:'●', flat:'→'};
 const arrow = d => `<span class="ar ${d}" title="${d}">${ARROW[d]||'→'}</span>`;
@@ -228,30 +232,49 @@ function applyTheme(t){
   document.getElementById('s-theme').textContent = (t.name||'theme') + (t.source==='fallback'?' (fallback)':'');
 }
 
-function trendCell(t){
-  const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
+function trendCell(t,i){
   const d=t.direction||'flat';
-  const title=`${t.geo_label} · rising ${Math.round((t.rising||0)*100)}%`+(t.delta?` · ${t.delta}`:'');
   const geo = t.geo==='IN-AP'?'AP' : t.geo==='IN-TG'?'TG' : 'IN';
-  return `<a class="cell ${d}" href="${url}" target="_blank" rel="noopener" title="${esc(title)}">
-    <div class="q">${arrow(d)} ${esc(t.query)}</div>
-    <div class="m"><span>${fmtK(t.traffic)} <span class="geo">${geo}</span></span>
-      <span class="meter">${bar(t.rising||0,6)}</span></div></a>`;
+  const n=t.coverage_outlets||0;
+  const cov = n===0 ? '<span class="cov none">uncovered</span>'
+            : n===1 ? '<span class="cov none">1 outlet</span>'
+            : `<span class="cov">${n} outlets</span>`;
+  const title=`${t.geo_label} · rising ${Math.round((t.rising||0)*100)}%`+(t.delta?` · ${t.delta}`:'')
+    +(t.local?' · names an AP place or person':'');
+  const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
+  const on = TREND && TREND.query===t.query ? 'on' : '';
+  return `<div class="cell ${on}" data-i="${i}" title="${esc(title)}">
+    <a class="ext" href="${url}" target="_blank" rel="noopener" title="open in Google Trends">↗</a>
+    <div class="q">${arrow(d)} ${esc(t.query)}${t.local?' <span class="ap">AP</span>':''}</div>
+    <div class="m"><span>${fmtK(t.traffic)}${geo!=='AP'?' <span style="opacity:.7">'+geo+'</span>':''}</span>${cov}</div></div>`;
 }
 
 function trailChip(t){
   const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
-  return `<a class="chip" href="${url}" target="_blank" rel="noopener"
-    title="peaked ${fmtK(t.peak_traffic)} · lasted ${t.lasted_min}m">
+  return `<a class="chip" href="${url}" target="_blank" rel="noopener" title="peaked ${fmtK(t.peak_traffic)} · lasted ${t.lasted_min}m">
     <span class="ar down">▼</span> <b>${esc(t.query)}</b> · ${fmtK(t.peak_traffic)} · gone ${ago(t.gone_min)}</a>`;
 }
 
-function gapRow(g){
-  const url='https://news.google.com/search?q='+encodeURIComponent(g.query)+'&hl=en-IN&gl=IN&ceid=IN:en';
-  return `<a class="gap" href="${url}" target="_blank" rel="noopener">
-    <span class="flag">${g.coverage===0?'UNCOVERED':'1 OUTLET'}</span>
-    <span class="q">${esc(g.query)}</span>
-    <span class="n">${fmtK(g.traffic)} · ${ago(g.age_min)}</span></a>`;
+function readingRows(list){
+  const by={}; for(const r of list){ (by[r.source]=by[r.source]||[]).push(r); }
+  let html='';
+  for(const [src, all] of Object.entries(by)){
+    // Telugu Wikipedia is Telugu-reader interest by definition and is shown
+    // whole. A national most-read list is shown only where it touches AP.
+    const national=!/wikipedia/i.test(src);
+    const rows = national ? all.filter(r=>r.local) : all;
+    const cov=rows.filter(r=>r.covered).length;
+    html+=`<div class="rdhead">${esc(src)} <i>${national
+      ? `${rows.length} of ${all.length} about AP${rows.length?` · ${cov} on the board`:''}`
+      : `${rows.length} pages · ${all.filter(r=>r.local).length} AP · ${cov} on the board`}</i></div>`;
+    rows.slice(0,12).forEach((r,i)=>{
+      html+=`<a class="rd ${i===0?'first':''}" href="${esc(r.url||'#')}" target="_blank" rel="noopener">
+        <span class="r">${r.views?fmtK(r.views).replace('+',''):'#'+r.rank}</span>
+        <span class="t ${r.local?'':'dim'}">${esc(r.title)}${r.local?' <span class="ap">AP</span>':''}</span>
+        <span class="c ${r.covered?'yes':''}">${r.covered?'✓ on board':'—'}</span></a>`;
+    });
+  }
+  return html;
 }
 
 function row(c,i){
@@ -262,18 +285,18 @@ function row(c,i){
   const why=c.trend_query ? `<div class="why">└─ searching "${esc(c.trend_query)}" · ${esc(c.trend_geo||'')}</div>` : '';
   const gloss=c.title_en ? `<div class="gloss">${esc(c.title_en)}</div>` : '';
   const outl = c.outlet_delta>0 ? ` <span class="up-c">+${c.outlet_delta}</span>` : '';
+  const fp = c.front_page_rank ? `<span class="fp" title="rank on Google News top stories">GN #${c.front_page_rank}</span>` : '';
   const links=(c.links||[]).filter(l=>l.url).map(l=>
     `<a href="${esc(l.url)}" target="_blank" rel="noopener">
       <span class="t">${l.kind==='social'?'◆ ':l.kind==='video'?'▶ ':''}${esc(l.title)}</span>
       <span class="o">${esc(l.outlet)} ${ago(l.age_min)}</span></a>`).join('');
   return `<article class="row ${i===CUR?'cur':''}" data-i="${i}">
     <div class="gutter">
-      <span class="n t-${t}">${arrow(d)}${Math.round(c.score)}</span>
-      ${delta}
-      <span class="sp" title="trend accel outlets velocity fresh">${spark(c.breakdown)}</span>
+      <span class="n t-${t}">${arrow(d)}${Math.round(c.score)}</span>${delta}
+      <span class="sp" title="trend accel outlets frontpage velocity fresh">${spark(c.breakdown)}</span>
     </div>
     <div class="body">
-      <h3 class="ttl"><span class="tag b-${esc(c.beat||'general')}">${esc(c.beat||'general')}</span>${esc(c.title)}</h3>
+      <h3 class="ttl">${esc(c.title)}${fp}</h3>
       ${gloss}
       <div class="meta"><span class="bar-t t-${t}">${bar(c.score/100,10)}</span>
         &nbsp; <span class="k">${c.outlet_count}</span> outlet${c.outlet_count===1?'':'s'}${outl}
@@ -284,11 +307,12 @@ function row(c,i){
 }
 
 const keep = c => {
+  if(TREND && !TREND.ids.has(c.id)) return false;
+  if(!TREND && c.extra) return false;   // below the top 60: only shown for a search
   if(FILTER==='ap' && c.locality!=='AP') return false;
   if(FILTER==='fresh' && c.age_min>30) return false;
   if(FILTER==='trend' && !c.trend_query) return false;
   if(FILTER==='moving' && !['up','new'].includes(c.direction)) return false;
-  if(BEAT && c.beat!==BEAT) return false;
   if(Q){ const h=(c.title+' '+(c.title_en||'')+' '+(c.trend_query||'')+' '+(c.outlets||[]).join(' ')).toLowerCase();
          if(!h.includes(Q)) return false; }
   return true;
@@ -304,8 +328,7 @@ function renderBar(){
   live.className='seg'+(stale?' stale':'');
   live.innerHTML= stale ? `▲ STALE ${ago(Math.round(ageS/60))}` : `<span class="dot live"></span>live`;
   document.getElementById('s-upd').textContent = last
-    ? 'updated '+last.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false})
-    : 'first tick running…';
+    ? 'updated '+last.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}) : 'first tick running…';
   const next=DATA.next_tick_at?new Date(DATA.next_tick_at):null;
   const nx=document.getElementById('s-next');
   clearInterval(countdownTimer);
@@ -316,49 +339,59 @@ function renderBar(){
   document.getElementById('s-cnt').textContent =
     `${s.clusters||0} stories · ${s.trends||0} trends` + (s.too_old?` · ${s.too_old} too old`:'');
   const ok=s.sources_ok??0, tot=s.sources_total??0;
-  const src=document.getElementById('s-src');
-  src.innerHTML=`<span class="dot ${ok<tot?'bad':''}"></span>src ${ok}/${tot}`;
+  document.getElementById('s-src').innerHTML=`<span class="dot ${ok<tot?'bad':''}"></span>src ${ok}/${tot}`;
 
   const notes=[];
   if(DATA.last_error) notes.push(['bad','last tick failed: '+esc(DATA.last_error)]);
   if((DATA.degraded||[]).length) notes.push(['warn','degraded this tick: '+DATA.degraded.join(', ')+' — showing last good data for those']);
   const cd=Object.entries(DATA.cooldowns||{});
   if(cd.length) notes.push(['warn','cooling down: '+cd.map(([h,s])=>`${h} (${Math.ceil(s/60)}m)`).join(', ')]);
-  document.getElementById('notices').innerHTML =
-    notes.map(([k,t])=>`<div class="notice ${k==='bad'?'bad':''}">${t}</div>`).join('');
+  document.getElementById('notices').innerHTML = notes.map(([k,t])=>`<div class="notice ${k==='bad'?'bad':''}">${t}</div>`).join('');
 }
 
 function renderSources(){
-  const rows=(DATA.sources||[]).map(s=>`<tr>
-    <td class="${s.ok?'ok':'err'}">${s.ok?'ok':'FAIL'}</td>
-    <td>${esc(s.name)}</td><td class="num">${s.count}</td><td class="num">${s.ms}ms</td>
+  const rows=(DATA.sources||[]).map(s=>{
+    const lastFresh = s.last_fresh ? (Date.now()-new Date(s.last_fresh))/3600000 : null;
+    const quiet = s.ok && s.kind==='news' && lastFresh!==null && lastFresh>24;
+    return `<tr>
+    <td class="${s.ok?(quiet?'warn':'ok'):'err'}">${s.ok?(quiet?'quiet':'ok'):'FAIL'}</td>
+    <td>${esc(s.name)}</td><td class="num">${s.count}</td><td class="num">${s.fresh_count??''}${s.fresh_count!=null?' fresh':''}</td>
+    <td class="num">${s.ms}ms</td>
     <td class="num">${s.last_ok?ago(Math.round((Date.now()-new Date(s.last_ok))/60000))+' ago':'never'}</td>
-    <td class="${s.ok?'':'err'}">${s.ok?'':esc(s.last_error)+(s.failures>1?` ×${s.failures}`:'')}</td></tr>`).join('');
+    <td class="${s.ok?'':'err'}">${s.ok?(quiet?'no fresh item in '+Math.round(lastFresh)+'h':''):esc(s.last_error)+(s.failures>1?` ×${s.failures}`:'')}</td></tr>`;}).join('');
   document.getElementById('srcpanel').innerHTML = rows?`<table>${rows}</table>`:'';
+}
+
+function setTrend(t){
+  if(!t || (TREND && TREND.query===t.query)) TREND=null;
+  else TREND={query:t.query, ids:new Set(t.coverage_ids||[])};
+  const pill=document.getElementById('pill');
+  pill.hidden=!TREND;
+  if(TREND) document.getElementById('pill-t').textContent='answers "'+TREND.query+'"';
+  CUR=-1; render();
 }
 
 function render(){
   if(!DATA) return;
   renderBar(); renderSources();
-  const tr=(DATA.trends||[]).slice(0,24);
+  const tr=(DATA.trends||[]).slice(0,30);
   document.getElementById('trends').innerHTML = tr.length ? tr.map(trendCell).join('') : '<div class="empty">no trend data yet</div>';
-  document.getElementById('n-tr').textContent = tr.length ? `${tr.filter(t=>t.direction==='up'||t.direction==='new').length}▲ ${tr.filter(t=>t.direction==='down').length}▼` : '';
+  document.querySelectorAll('#trends .cell').forEach(el=>el.onclick=e=>{ if(e.target.closest('a')) return; setTrend(tr[+el.dataset.i]); });
+  const up=tr.filter(t=>t.direction==='up'||t.direction==='new').length, dn=tr.filter(t=>t.direction==='down').length,
+        unc=tr.filter(t=>!t.coverage_outlets).length, loc=tr.filter(t=>t.local).length;
+  document.getElementById('n-tr').textContent = tr.length ? `${up}▲ ${dn}▼ · ${loc} AP · ${unc} uncovered` : '';
   const trl=DATA.trailing||[];
   document.getElementById('trailing').innerHTML = trl.length ? trl.map(trailChip).join('') : '<div class="empty" style="border:none">nothing has dropped off in the last 90 minutes</div>';
   document.getElementById('n-trail').textContent = trl.length? trl.length+'' : '';
-  const g=DATA.gaps||[];
-  document.getElementById('gaps').innerHTML = g.length ? g.map(gapRow).join('') : '<div class="empty">nothing rising without coverage — you are on top of it</div>';
+  const rd=DATA.reading||[];
+  document.getElementById('reading').innerHTML = rd.length ? readingRows(rd) : '<div class="empty">no reading data yet — the most-read lists load on the 15-minute tick</div>';
+  document.getElementById('n-rd').textContent = rd.length ? `${rd.filter(r=>r.local).length} AP items` : '';
 
   const all=DATA.board||[];
-  const present=new Set(all.map(c=>c.beat||'general'));
-  document.getElementById('beats').innerHTML = BEAT_LIST.filter(b=>present.has(b)).map(b=>
-    `<button data-b="${b}" class="b-${b} ${BEAT===b?'on':''}">${b}</button>`).join('');
-  document.querySelectorAll('#beats button').forEach(btn=>btn.onclick=()=>{BEAT=BEAT===btn.dataset.b?null:btn.dataset.b; render();});
-
   const b=all.filter(keep);
   if(CUR>=b.length) CUR=b.length-1;
   document.getElementById('board').innerHTML = b.length ? b.map(row).join('') : '<div class="empty">no stories match this filter</div>';
-  document.getElementById('n-board').textContent = `${b.length}/${all.length}`;
+  document.getElementById('n-board').textContent = `${b.length}/${all.filter(c=>!c.extra).length}`;
   document.querySelectorAll('.row').forEach(el=>el.onclick=e=>{ if(e.target.closest('a,summary')) return; CUR=+el.dataset.i; markCur(); });
 }
 function markCur(){ document.querySelectorAll('.row').forEach(el=>el.classList.toggle('cur',+el.dataset.i===CUR));
@@ -368,18 +401,19 @@ document.querySelectorAll('#filters button').forEach(btn=>btn.onclick=()=>setFil
 function setFilter(f){ FILTER=f; document.querySelectorAll('#filters button').forEach(x=>x.classList.toggle('on',x.dataset.f===f)); CUR=-1; render(); }
 const qbox=document.getElementById('q');
 qbox.oninput=()=>{ Q=qbox.value.trim().toLowerCase(); CUR=-1; render(); };
+document.getElementById('pill-x').onclick=()=>setTrend(null);
 document.getElementById('s-src').onclick=()=>{ const p=document.getElementById('srcpanel'); p.hidden=!p.hidden; };
 
 document.addEventListener('keydown',e=>{
   if(e.target===qbox){ if(e.key==='Escape'){ qbox.value=''; Q=''; qbox.blur(); render(); } return; }
   if(e.ctrlKey||e.metaKey||e.altKey) return;
-  const rows=document.querySelectorAll('.row'); if(!rows.length && !'/s12345'.includes(e.key)) return;
+  const rows=document.querySelectorAll('.row');
   switch(e.key){
     case '/': e.preventDefault(); qbox.focus(); break;
-    case 'j': CUR=Math.min(rows.length-1,CUR+1); markCur(); break;
-    case 'k': CUR=Math.max(0,CUR-1); markCur(); break;
+    case 'j': if(rows.length){ CUR=Math.min(rows.length-1,CUR+1); markCur(); } break;
+    case 'k': if(rows.length){ CUR=Math.max(0,CUR-1); markCur(); } break;
     case 'o': case 'Enter': { const el=document.querySelector('.row.cur .links a'); if(el) window.open(el.href,'_blank','noopener'); break; }
-    case 'Escape': CUR=-1; BEAT=null; markCur(); render(); break;
+    case 'Escape': CUR=-1; if(TREND) setTrend(null); else { markCur(); render(); } break;
     case 's': document.getElementById('s-src').click(); break;
     case '1': setFilter('all'); break; case '2': setFilter('ap'); break; case '3': setFilter('fresh'); break;
     case '4': setFilter('trend'); break; case '5': setFilter('moving'); break;
@@ -389,7 +423,9 @@ document.addEventListener('keydown',e=>{
 async function tick(){
   try{
     const [b,t]=await Promise.all([fetch('/api/board',{cache:'no-store'}), fetch('/api/theme',{cache:'no-store'})]);
-    DATA=await b.json(); applyTheme(await t.json()); render();
+    DATA=await b.json(); applyTheme(await t.json());
+    if(TREND){ const live=(DATA.trends||[]).find(x=>x.query===TREND.query); if(live) TREND.ids=new Set(live.coverage_ids||[]); }
+    render();
   }catch(e){ /* keep the last good board on screen */ }
 }
 tick(); setInterval(tick, 30000);
@@ -398,7 +434,7 @@ tick(); setInterval(tick, 30000);
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "APRadar/1.1"
+    server_version = "APRadar/1.2"
 
     def log_message(self, fmt, *args):  # keep the console clean for tick output
         pass

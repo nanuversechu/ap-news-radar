@@ -32,6 +32,7 @@ _state: dict = {
     "trailing": [],
     "board": [],
     "gaps": [],
+    "reading": [],
     "sources": [],
     "cooldowns": {},
     "degraded": [],
@@ -56,6 +57,8 @@ def _source_summary() -> list[dict]:
             "failures": r["failures"] or 0,
             "last_ok": r["last_ok"], "last_error": r["last_error"] or "",
             "count": r["last_count"] or 0, "ms": r["last_ms"] or 0,
+            "fresh_count": r["fresh_count"] if "fresh_count" in r.keys() else None,
+            "last_fresh": r["last_fresh"] if "last_fresh" in r.keys() else None,
         })
     return out
 
@@ -65,8 +68,10 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     started = time.time()
     store.init()
     slow = (tick % config.SLOW_EVERY_N_TICKS) == 0
-    stats = {"trends": 0, "new_items": 0, "google_news": 0, "districts": 0,
-             "publishers": 0, "geo": 0, "social": 0, "youtube": 0, "chased": 0}
+    hourly = (tick % config.HOURLY_EVERY_N_TICKS) == 0
+    stats = {"trends": 0, "new_items": 0, "google_news": 0, "top": 0, "topics": 0,
+             "districts": 0, "publishers": 0, "geo": 0, "social": 0, "youtube": 0,
+             "chased": 0, "reading": 0}
     degraded: list[str] = []
 
     trends = collect.collect_trends()
@@ -85,6 +90,10 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     if not gn:
         degraded.append("google_news")
 
+    top = collect.collect_top_stories()
+    stats["top"] = len(top)
+    items += top
+
     dq = collect.collect_google_news(collect.district_queries(tick), "Google News · districts")
     stats["districts"] = len(dq)
     items += dq
@@ -94,6 +103,9 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     items += chased
 
     if slow:
+        tp = collect.collect_topics()
+        stats["topics"] = len(tp)
+        items += tp
         pub = collect.collect_publishers()
         stats["publishers"] = len(pub)
         items += pub
@@ -107,12 +119,18 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
         stats["youtube"] = len(yt)
         items += yt
 
+    if slow:
+        stats["reading"] = collect.collect_reading()
+    if hourly:
+        stats["reading"] += collect.collect_wiki_top()
+
     stats["new_items"], stats["too_old"] = collect.ingest(items)
     cluster.assign_clusters()
     board = score.score_all(trends)
     _add_english_gloss(board)
-    gap_list = score.gaps(trends, board)
+    gap_list = score.trend_coverage(trends, board)   # annotates trends in place
     trailing = collect.trailing_trends(trends)
+    reading = score.reading_view(board)
 
     # The very first run has no history to accelerate against, so every story
     # looks like a breakout. Fill the baseline quietly and start alerting from
@@ -141,10 +159,11 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
         _state["trends"] = _dedupe_trends(trends)[:40]
         _state["trailing"] = trailing
         if board or "google_news" not in degraded:
-            _state["board"] = board[:60]
+            _state["board"] = _board_payload(board, trends)
         else:
             degraded.append("board")
         _state["gaps"] = gap_list
+        _state["reading"] = reading
         _state["sources"] = sources
         _state["cooldowns"] = net.cooldowns()
         _state["degraded"] = degraded
@@ -157,6 +176,24 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     if verbose:
         print(f"[tick {tick}] {stats}" + (f" degraded={degraded}" if degraded else ""), flush=True)
     return stats
+
+
+def _board_payload(board: list[dict], trends: list[dict], top: int = 60) -> list[dict]:
+    """The top stories, plus every story a live search points at.
+
+    Coverage is computed over the whole scored list, so a search's matching
+    stories can sit below the top sixty. Clicking that search must show them,
+    so they ride along flagged `extra`; the page hides extras unless a search
+    filter is active.
+    """
+    wanted = {cid for t in trends for cid in t.get("coverage_ids", [])}
+    out = []
+    for i, cl in enumerate(board):
+        if i < top:
+            out.append(cl)
+        elif cl["id"] in wanted:
+            out.append({**cl, "extra": True})
+    return out
 
 
 def _dedupe_trends(trends: list[dict]) -> list[dict]:
@@ -200,14 +237,26 @@ def _add_english_gloss(board: list[dict]) -> None:
 
 
 def _sleep_with_heartbeat(seconds: float) -> None:
-    """Sleep in slices so systemd keeps hearing from us between ticks."""
-    end = time.monotonic() + seconds
+    """Sleep in slices so systemd keeps hearing from us between ticks.
+
+    Watches the wall clock as well as the monotonic one. Linux's monotonic
+    clock stops during suspend, so after a laptop lid is closed for an hour
+    the monotonic deadline is still minutes away while the data on screen is
+    an hour old. The wall clock has moved on, and that ends the sleep.
+    """
+    end_mono = time.monotonic() + seconds
+    end_wall = time.time() + seconds
     while True:
-        left = end - time.monotonic()
+        left = min(end_mono - time.monotonic(), end_wall - time.time())
         if left <= 0:
             return
         time.sleep(min(left, 30.0))
         watchdog.heartbeat()
+
+
+def sleep_remaining(end_mono: float, end_wall: float) -> float:
+    """Seconds left, by whichever clock says less. Exposed for tests."""
+    return max(0.0, min(end_mono - time.monotonic(), end_wall - time.time()))
 
 
 def loop(forever: bool = True) -> None:

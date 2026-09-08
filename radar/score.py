@@ -52,14 +52,6 @@ def item_age(row) -> float:
     return _minutes_since(row["first_seen"])
 
 
-def beat_for(ents: set[str]) -> str:
-    """One-word desk label; first matching beat in config.BEATS wins."""
-    for name, keys in config.BEATS:
-        if ents & keys:
-            return name
-    return "general"
-
-
 def _direction(cluster_id: int, score_now: float, outlets_now: int,
                age_min: float) -> tuple[str, float, int]:
     """('new'|'up'|'down'|'flat', score delta, outlet delta) vs ~15 minutes ago."""
@@ -95,7 +87,7 @@ def score_all(trends: list[dict]) -> list[dict]:
     scored: list[dict] = []
     for cl in clusters:
         items = c.execute(
-            "SELECT title, url, outlet, domain, lang, kind, published_at, first_seen "
+            "SELECT title, url, outlet, domain, lang, kind, published_at, first_seen, rank "
             "FROM items WHERE cluster_id=? ORDER BY first_seen DESC", (cl["id"],),
         ).fetchall()
         if not items:
@@ -112,9 +104,9 @@ def score_all(trends: list[dict]) -> list[dict]:
             cl["id"], result["score"], result["outlet_count"], result["age_min"])
         c.execute(
             """UPDATE clusters SET score=?, peak_score=MAX(peak_score, ?),
-               breakdown=?, trend_query=?, picture=?, beat=? WHERE id=?""",
+               breakdown=?, trend_query=?, picture=? WHERE id=?""",
             (result["score"], result["score"], json.dumps(result["breakdown"]),
-             result["trend_query"], result["picture"], result["beat"], cl["id"]),
+             result["trend_query"], result["picture"], cl["id"]),
         )
         # One row per cluster per tick was 44,000 rows a day — the table that
         # grew the database to 106 MB. Only trajectories worth reading later
@@ -184,6 +176,13 @@ def _score_cluster(cl, items, trends: list[dict]) -> dict:
             trend_score = min(1.0, value)
             trend_query, picture, trend_geo = t["query"], t.get("picture", ""), t["geo_label"]
 
+    # --- prominence: where Google's front page puts it ---------------------
+    # Rank on the top-stories feed is the one reading-behaviour signal Google
+    # gives away for free. Position 1 is worth 1.0, position 30 nothing.
+    ranks = [it["rank"] for it in items if it["rank"]]
+    best_rank = min(ranks) if ranks else None
+    prominence = max(0.0, 1.0 - (best_rank - 1) / 30.0) if best_rank else 0.0
+
     # --- freshness ---------------------------------------------------------
     freshness = 0.5 ** (age_min / config.FRESHNESS_HALFLIFE_MIN)
 
@@ -191,6 +190,7 @@ def _score_cluster(cl, items, trends: list[dict]) -> dict:
         "trend": trend_score,
         "acceleration": acceleration,
         "corroboration": corroboration,
+        "prominence": prominence,
         "velocity": velocity,
         "freshness": freshness,
     }
@@ -215,7 +215,7 @@ def _score_cluster(cl, items, trends: list[dict]) -> dict:
         "languages": sorted({it["lang"] for it in items}),
         "entities": sorted(ents),
         "locality": locality_label,
-        "beat": beat_for(ents),
+        "front_page_rank": best_rank,
         "trend_query": trend_query,
         "trend_geo": trend_geo,
         "picture": picture,
@@ -228,37 +228,78 @@ def _score_cluster(cl, items, trends: list[dict]) -> dict:
     }
 
 
-def gaps(trends: list[dict], scored: list[dict]) -> list[dict]:
-    """Rising searches nobody has covered yet — the commissioning list.
+def trend_coverage(trends: list[dict], scored: list[dict]) -> list[dict]:
+    """Demand against supply, per query.
 
-    A query climbing in Andhra Pradesh with thin or no matching coverage is the
-    clearest publishable opportunity the radar can hand a desk.
+    For every live search, how many independent outlets have a matching story
+    on the board right now, and which stories. Annotates each trend in place
+    with `coverage_outlets`, `coverage_ids`, `local`, and returns the
+    commissioning list: rising searches with one outlet or none.
     """
-    out = []
+    gaps = []
     for t in trends:
+        outlets: set[str] = set()
+        ids: list[int] = []
+        best = 0.0
+        for cl in scored:
+            if lexicon.matches_trend(t["query"], cl["title"]) >= 0.55:
+                outlets |= {o.lower() for o in cl.get("outlets", [])}
+                ids.append(cl["id"])
+                best = max(best, cl["score"])
+        t["coverage_outlets"] = len(outlets)
+        t["coverage_ids"] = ids[:20]
+        t["coverage_best"] = round(best, 1)
+        t["local"] = lexicon.locality(set(t.get("entities") or set()))[1] == "AP"
+
         if t["rising"] < 0.30 or t["geo"] == "IN":
             continue
         # A bare common noun trending ("price", "manager") is not a commission.
-        # Require either a name we know or a multi-word query.
-        if not t["entities"] and len(lexicon.tokens(t["query"])) < 2:
+        if not t.get("entities") and len(lexicon.tokens(t["query"])) < 2:
             continue
-        best_cov = 0
-        for cluster in scored:
-            if lexicon.matches_trend(t["query"], cluster["title"]) >= 0.55:
-                best_cov = max(best_cov, cluster["outlet_count"])
-        if best_cov <= 1:
-            out.append({
-                "query": t["query"],
-                "geo": t["geo_label"],
-                "traffic": t["traffic"],
-                "rising": t["rising"],
-                "picture": t["picture"],
-                "coverage": best_cov,
-                "age_min": round(_minutes_since(t["first_seen"])),
-                "news": t["news"][:3],
+        if len(outlets) <= 1:
+            gaps.append({
+                "query": t["query"], "geo": t["geo_label"], "traffic": t["traffic"],
+                "rising": t["rising"], "picture": t.get("picture", ""),
+                "coverage": len(outlets), "age_min": round(_minutes_since(t["first_seen"])),
+                "news": t.get("news", [])[:3],
             })
-    out.sort(key=lambda g: (g["coverage"], -g["rising"]))
-    return out[:12]
+    gaps.sort(key=lambda g: (g["coverage"], -g["rising"]))
+    return gaps[:12]
+
+
+def reading_view(scored: list[dict]) -> list[dict]:
+    """What people are reading, each item marked local / covered.
+
+    `covered` means a story on the board matches it; `local` means the lexicon
+    finds an Andhra Pradesh place, person or institution in it.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
+    rows = store.conn().execute(
+        "SELECT source, title, url, rank, views, ts FROM reading WHERE ts >= ? "
+        "ORDER BY source, rank", (since,),
+    ).fetchall()
+    titles = [cl["title"] for cl in scored[:80]]
+    out = []
+    for r in rows:
+        ents = lexicon.entities(r["title"])
+        covered = any(
+            lexicon.similarity(r["title"], t) >= lexicon.MERGE_THRESHOLD
+            or lexicon.matches_trend(r["title"], t) >= 0.55
+            for t in titles
+        )
+        out.append({
+            "source": r["source"], "title": r["title"], "url": r["url"],
+            "rank": r["rank"], "views": r["views"],
+            "local": lexicon.locality(ents)[1] == "AP",
+            "covered": covered,
+            "age_min": round(_minutes_since(r["ts"])),
+        })
+    return out
+
+
+def gaps(trends: list[dict], scored: list[dict]) -> list[dict]:
+    """Kept for callers that only want the commissioning list."""
+    return trend_coverage(trends, scored)
 
 
 def due_alerts(scored: list[dict]) -> list[dict]:

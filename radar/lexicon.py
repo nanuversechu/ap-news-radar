@@ -19,6 +19,9 @@ from functools import lru_cache
 from . import config
 
 TELUGU_RANGE = re.compile(r"[ఀ-౿]")
+# Any other Indic script. Google's India-wide trends carry Hindi, Marathi,
+# Tamil, Kannada and Bengali queries that mean nothing to a Telugu desk.
+_OTHER_INDIC = re.compile(r"[\u0900-\u0BFF\u0C80-\u0DFF]")  # Devanagari … Tamil, Kannada … Sinhala
 _WORD = re.compile(r"[\wఀ-౿]+", re.UNICODE)
 
 # Build a surface-form -> key index once, longest form first so that
@@ -34,10 +37,21 @@ TOPIC_KEYS = {k for k, (kind, _) in config.LEXICON.items() if kind == "topic"}
 # Named things. "cricket" or "cinema" identify a beat; "tirumala" identifies a
 # story, and only the latter can tie a search query to a headline.
 SPECIFIC_KEYS = {k for k in config.LEXICON if k not in TOPIC_KEYS}
-AP_PERSON_KEYS = {"chandrababu_naidu", "jagan", "pawan_kalyan", "lokesh", "sharmila"}
-AP_ORG_KEYS = {"tdp", "ysrcp", "janasena", "ttd", "apsrtc", "appsc"}
-# Places that are Telugu-sphere but not Andhra Pradesh.
-NON_AP_KEYS = {"revanth", "kcr"}
+# Locality is derived from the lexicon so that adding a minister there is
+# enough. Only the exceptions are listed: people and bodies that are named in
+# AP news constantly without the story being about Andhra Pradesh.
+_NATIONAL = {"modi", "amit_shah", "kohli", "rohit", "bumrah",
+             "bjp", "congress", "imd", "cbi", "ed"}
+# Telugu-sphere but not Andhra Pradesh: Telangana politics, and film stars
+# whose stories are Telugu-reader interest rather than state news.
+NON_AP_KEYS = {"revanth", "kcr", "ktr", "brs",
+               "prabhas", "mahesh_babu", "ntr_jr", "ram_charan", "allu_arjun",
+               "chiranjeevi", "nagarjuna", "vijay_deverakonda", "rajamouli",
+               "samantha", "rashmika", "anushka", "nayanthara"}
+AP_PERSON_KEYS = {k for k, (kind, _) in config.LEXICON.items()
+                  if kind == "person" and k not in _NATIONAL | NON_AP_KEYS}
+AP_ORG_KEYS = {k for k, (kind, _) in config.LEXICON.items()
+               if kind == "org" and k not in _NATIONAL | NON_AP_KEYS}
 
 
 def is_telugu(text: str) -> bool:
@@ -47,6 +61,12 @@ def is_telugu(text: str) -> bool:
 # Every headline is re-examined on each tick against every live trend, so these
 # three run hundreds of thousands of times a minute on the same few thousand
 # strings. Uncached, that alone took a tick past its own five-minute interval.
+@lru_cache(maxsize=50_000)
+def desk_script(text: str) -> bool:
+    """True if the text is Telugu, Latin, or a mix — the scripts this desk reads."""
+    return not _OTHER_INDIC.search(text or "")
+
+
 @lru_cache(maxsize=200_000)
 def normalise(text: str) -> str:
     """Lowercase, strip accents/punctuation, keep Telugu intact."""

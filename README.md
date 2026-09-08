@@ -1,7 +1,8 @@
 # Andhra Pradesh news radar
 
-Tells you what Andhra Pradesh is searching Google for **right now**, which of
-those searches the press has already covered, and which it has not.
+Tells you what Andhra Pradesh is searching for and reading **right now**,
+which of it the press has already covered, and which it has not — so a desk can
+write to demand instead of guessing at it.
 
 Built for a desk, not a data scientist. No API keys, no accounts, no
 `pip install` — Python's standard library and nothing else.
@@ -87,18 +88,31 @@ every trend and story, so it reads even on a palette where red and green agree.
 
 ### On the board
 
-- **Searching now** — each trend carries an arrow against thirty minutes ago
-  (traffic bucket or rank), the count `3▲ 1▼` in the section rule, and AP/TG/IN.
-- **Trailing** — queries that were trending and have dropped off the feed in
-  the last 90 minutes, with what they peaked at. A story that has stopped rising
-  is as useful to know as one that has started.
-- **Beats** — every story is tagged `weather · crime · faith · exams · infra ·
-  civic · cinema · sport · politics`, coloured from the theme, and the tags are
-  filters. A politician commenting on a flood is a weather story.
-- **Score arrows** with the delta (`▲ +15`) against fifteen minutes ago, and
-  `+2` next to the outlet count when more newsrooms have picked it up.
-- **Keyboard**: `/` filter · `j` `k` move · `o` open · `1`–`5` tabs · `s`
-  sources · `esc` clear.
+Four panels, in the order a desk needs them.
+
+1. **Searching now** — every live Google search from Andhra Pradesh (then
+   Telangana, then India, at lower weight), each with an arrow against thirty
+   minutes ago, its traffic bucket, an `AP` mark when it names an AP place,
+   person or institution, and — the important part — **its coverage right
+   now**: `6 outlets`, `1 outlet`, or `uncovered`. Click a search and the board
+   narrows to the stories that answer it. Hindi, Marathi, Tamil and Kannada
+   queries from the India-wide feed are dropped; they are not this desk's
+   readers.
+2. **Trailing** — searches that were trending and have dropped off in the last
+   90 minutes, with what they peaked at. A story that has stopped rising is as
+   useful to know as one that has started.
+3. **Reading** — what people are reading, as opposed to searching: the Times of
+   India most-read and most-shared lists (national, so only the AP items are
+   shown, with an honest "2 of 10 about AP"), and Telugu Wikipedia's most-viewed
+   pages. Wikipedia's pageview data is daily, so that list is *yesterday* and
+   says so. Each item is marked `✓ on board` when a story on the board matches
+   it.
+4. **Story board** — everything published in the last two hours, scored, with
+   direction arrows (`▲ +15`), outlet counts (`+2` when more newsrooms picked it
+   up), and `GN #3` when Google's own front page ranks it.
+
+**Keyboard**: `/` filter · `j` `k` move · `o` open · `1`–`5` tabs · `s`
+sources · `esc` clear (or drop the search filter).
 
 ## What it watches
 
@@ -120,11 +134,15 @@ alert age limit, the acceleration comparison — keys off that one number.
 |---|---|---|---|
 | What AP is searching | Google Trends RSS, `geo=IN-AP` | free, keyless | 5 min |
 | Same for Telangana + India | Google Trends RSS, `IN-TG` / `IN` | free, keyless | 5 min |
+| Google's front page | Google News top stories, Telugu and English, **rank kept** | free, keyless | 5 min |
+| Every Google News section | Nation, World, Business, Technology, Entertainment, Sports, Science, Health (Telugu) + Nation, Business, Entertainment, Sports (English) | free, keyless | 15 min |
 | Breaking coverage | Google News RSS, 30 standing queries in Telugu and English, all `when:2h` | free, keyless | 5 min |
 | District sweeps | 18 more Google News queries, a third each tick | free, keyless | every district every 15 min |
 | Coverage of what's rising | Google News searched for each rising trend | free, keyless | 5 min |
 | City sections | Google News geo feeds for Visakhapatnam, Amaravati, Vijayawada | free, keyless | 15 min |
 | AP newspapers | 17 publisher RSS feeds (below) | free | 15 min |
+| What people are reading | Times of India most-read and most-shared | free, keyless | 15 min |
+| What Telugu readers looked up | Telugu Wikipedia most-viewed pages (daily data) | free, keyless | hourly |
 | Chatter | Reddit r/andhrapradesh (marked ◆ social) | free, keyless | 15 min |
 | ~~Telugu TV~~ | ~~7 YouTube channel RSS feeds~~ | **dead since 18 Aug 2026** — see below | — |
 
@@ -135,10 +153,12 @@ The seventeen publisher feeds: **The Hindu** (AP, Vijayawada, Visakhapatnam),
 Visakhapatnam). Government releases arrive through a `site:pib.gov.in` search
 feed, since PIB's own RSS is broken.
 
-Every source's outcome is recorded each poll. The status bar shows `src 24/24`;
+Every source's outcome is recorded each poll — 44 of them. The status bar shows `src 44/44`;
 click it (or press `s`) for the table — items, latency, last success, and the
 error when there is one. A source is "ok" only when it answered *and* returned
-something parseable; a 200 with an empty body counts as a failure.
+something parseable; a 200 with an empty body counts as a failure, and a feed
+that answers but has produced no item inside the freshness window for a day is
+marked `quiet` — alive to a monitor, dead to a desk.
 
 Roughly 185 distinct outlets reach the board in a given tick, because the
 Google News queries pull from far more mastheads than the seventeen we poll directly.
@@ -161,6 +181,10 @@ parallel, a real User-Agent with a contact address.
 - **Last good data survives a bad tick.** If Google Trends or Google News comes
   back empty, the previous board stays up and a notice says which sources were
   degraded — the page is told, not blanked.
+- **A laptop lid closing does not stall it.** Linux's monotonic clock stops
+  during suspend, so a sleep timer set before the lid closed is still "minutes
+  away" hours later. The poll loop watches the wall clock too, and polls the
+  moment the machine is back.
 - **Staleness is loud.** If no tick has completed in three intervals the live
   dot becomes a red `▲ STALE 14m` segment. The bar also counts down to the next
   poll, so a healthy radar is visibly healthy.
@@ -198,15 +222,18 @@ parallel, a real User-Agent with a contact address.
 Every item is grouped into a **story cluster**, then each cluster is scored:
 
 ```
-score = 100 × locality × ( 0.34 trend        does a live Google search match this?
-                         + 0.22 acceleration reports in the last 30 min vs the 90 before
-                         + 0.20 corroboration how many independent outlets have it
-                         + 0.14 velocity     raw reports per hour
-                         + 0.10 freshness    decays with a 40 minute half-life )
+score = 100 × locality × ( 0.32 trend        does a live Google search match this?
+                         + 0.20 acceleration reports in the last 30 min vs the 90 before
+                         + 0.18 corroboration how many independent outlets have it
+                         + 0.12 prominence   rank on Google News' front page, if any
+                         + 0.10 velocity     raw reports per hour
+                         + 0.08 freshness    decays with a 40 minute half-life )
 ```
 
 `locality` is `1.0` when the story names an AP place, politician or
-institution, `0.55` for the wider Telugu sphere, `0.18` otherwise. This is what
+institution, `0.55` for the wider Telugu sphere (Telangana politics, Telugu film
+stars), `0.18` otherwise. It is derived from the lexicon, so adding a minister
+there is enough. This is what
 keeps a Caribbean Premier League scorecard off an Andhra Pradesh board.
 
 **Alerts** fire at score ≥ 62, but only when at least **two independent
@@ -230,9 +257,11 @@ A Telugu headline and its English twin have to land in one cluster, or every
 story gets counted twice and corroboration is meaningless.
 
 The textbook answer is LaBSE. On a 16 GB CPU-only laptop that is a bad trade,
-so this uses the fact that AP news revolves around a knowable cast — about
-seventy people, places, parties and recurring topics, listed in both scripts in
-`radar/config.py`. Match those and the headlines collapse onto one signature.
+so this uses the fact that AP news revolves around a knowable cast — about a
+hundred and fifty people, places, parties and recurring topics, listed in both
+scripts in `radar/config.py`: all 26 districts and their towns, the cabinet,
+the opposition bench, the institutions, the film and cricket names AP searches
+for constantly. Match those and the headlines collapse onto one signature.
 
 ```
 "Pawan Kalyan's brother Naga Babu appointed chairman of AP Green Executive Committee"

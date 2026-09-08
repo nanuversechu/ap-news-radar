@@ -37,6 +37,18 @@ MERGE_CASES = [
 
 LOCALITY_CASES = [
     ("Bhogapuram airport opens in Vizianagaram", "AP"),
+    # The cabinet and the opposition bench count, in either script.
+    ("Botsa Satyanarayana hits back at TDP over ZP chairman", "AP"),
+    ("మంత్రి అనిత సమీక్ష: గంజాయిపై ఉక్కుపాదం", "AP"),
+    ("Payyavula Keshav presents supplementary budget", "AP"),
+    ("AP cabinet clears local body poll reservations", "AP"),
+    ("DSC results released: 16,347 posts filled", "AP"),
+    # Telugu-sphere, not state news.
+    ("Prabhas' next film gets a release date", "Telugu"),
+    ("KTR slams Revanth over Musi project", "Telugu"),
+    # National.
+    ("Kohli century seals series for India", "wider"),
+    ("Amit Shah reviews security in Delhi", "wider"),
     ("Chandrababu Naidu chairs cabinet meeting", "AP"),
     ("Revanth Reddy on Telangana funds", "Telugu"),
     # Topic words alone must not make something local news.

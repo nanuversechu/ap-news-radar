@@ -44,7 +44,8 @@ OMARCHY_THEME_DIR = os.path.join(OMARCHY_STATE_DIR, "theme")
 # --------------------------------------------------------------------------
 
 TICK_SECONDS = int(os.environ.get("RADAR_TICK", "300"))  # 5 minutes
-SLOW_EVERY_N_TICKS = 3  # publisher + youtube feeds run every 3rd tick (~15 min)
+SLOW_EVERY_N_TICKS = 3    # publishers, sections, most-read: every 3rd tick (~15 min)
+HOURLY_EVERY_N_TICKS = 12  # Wikipedia top pages change once a day; once an hour is plenty
 
 # The freshness contract. Anything published longer ago than this is refused at
 # ingest and never reaches the board — this is a "what is breaking now" radar,
@@ -146,6 +147,37 @@ GEO_FEEDS: list[tuple[str, str]] = [
     ("Google News · Vijayawada", "https://news.google.com/rss/headlines/section/geo/Vijayawada?hl=en-IN&gl=IN&ceid=IN:en"),
 ]
 
+# Google News front page and sections, per language. Rank within the top
+# stories feed is Google's own reading-behaviour signal and is kept.
+# Verified 8 Sep 2026: every one of these answers with 22–70 items.
+_GN = "https://news.google.com/rss"
+GOOGLE_NEWS_TOP: list[tuple[str, str]] = [
+    ("Google News · top stories (te)", f"{_GN}?hl=te-IN&gl=IN&ceid=IN:te"),
+    ("Google News · top stories (en)", f"{_GN}?hl=en-IN&gl=IN&ceid=IN:en"),
+]
+GOOGLE_NEWS_TOPICS: list[tuple[str, str]] = [
+    (f"Google News · {t.lower()} (te)", f"{_GN}/headlines/section/topic/{t}?hl=te-IN&gl=IN&ceid=IN:te")
+    for t in ("NATION", "WORLD", "BUSINESS", "TECHNOLOGY", "ENTERTAINMENT", "SPORTS", "SCIENCE", "HEALTH")
+] + [
+    (f"Google News · {t.lower()} (en)", f"{_GN}/headlines/section/topic/{t}?hl=en-IN&gl=IN&ceid=IN:en")
+    for t in ("NATION", "BUSINESS", "ENTERTAINMENT", "SPORTS")
+]
+
+# What people are *reading*, as opposed to searching. National, so each item
+# is marked AP-local or not by the lexicon; still worth a desk's glance.
+READING_FEEDS: list[tuple[str, str]] = [
+    ("Times of India · most read", "https://timesofindia.indiatimes.com/rssfeedmostread.cms"),
+    ("Times of India · most shared", "https://timesofindia.indiatimes.com/rssfeedmostshared.cms"),
+]
+
+# Wikipedia's most-viewed pages. The pageviews API is daily-only per article,
+# so this is yesterday, and is labelled as such — it is still the clearest
+# free read on what Telugu readers went looking for.
+WIKI_PROJECTS: list[tuple[str, str]] = [
+    ("te.wikipedia", "Telugu Wikipedia"),
+]
+WIKI_TOP_N = 15
+
 # Reddit's unauthenticated RSS is real but tight: three subreddit fetches in a
 # row drew a 429. One feed, every 15 minutes, with the host cooled down on any
 # push-back, stays well inside that. Kind "social" so the desk can tell chatter
@@ -234,67 +266,140 @@ YOUTUBE_CHANNELS: list[tuple[str, str]] = [
 # --------------------------------------------------------------------------
 
 LEXICON: dict[str, tuple[str, list[str]]] = {
-    # --- people ---
+    # ===================== people: government =====================
     # Deliberately no bare "naidu": it is one of the commonest surnames in the
     # state, and it made an astronomer called Rohan Naidu read as Andhra
     # Pradesh political news. Headlines that only ever say "Naidu" are the
     # price of that; they almost always name someone else identifiable too.
-    "chandrababu_naidu": ("person", [
-        "chandrababu", "chandra babu", "cbn", "cm naidu", "naidu government",
-        "చంద్రబాబు", "చంద్రబాబు నాయుడు", "నారా చంద్రబాబు",
-    ]),
-    "jagan": ("person", [
-        "jagan", "jagan mohan reddy", "ys jagan", "jagan mohan",
-        "జగన్", "జగన్ మోహన్ రెడ్డి", "వైఎస్ జగన్",
-    ]),
-    "pawan_kalyan": ("person", [
-        "pawan kalyan", "pawan", "deputy cm pawan",
-        "పవన్ కళ్యాణ్", "పవన్",
-    ]),
+    "chandrababu_naidu": ("person", ["chandrababu", "chandra babu", "cbn", "cm naidu", "naidu government",
+                                     "చంద్రబాబు", "చంద్రబాబు నాయుడు", "నారా చంద్రబాబు"]),
+    "pawan_kalyan": ("person", ["pawan kalyan", "pawan", "deputy cm pawan", "పవన్ కళ్యాణ్", "పవన్", "పవన్ కల్యాణ్"]),
     "lokesh": ("person", ["nara lokesh", "lokesh", "లోకేష్", "నారా లోకేష్"]),
     "naga_babu": ("person", ["naga babu", "nagababu", "నాగబాబు", "నాగ బాబు"]),
+    "atchannaidu": ("person", ["atchannaidu", "achchennaidu", "atchannaidu", "అచ్చెన్నాయుడు"]),
+    "anagani": ("person", ["anagani satya prasad", "anagani", "అనగాని"]),
+    "nadendla": ("person", ["nadendla manohar", "nadendla", "నాదెండ్ల"]),
+    "kandula_durgesh": ("person", ["kandula durgesh", "durgesh", "కందుల దుర్గేష్", "దుర్గేష్"]),
+    "gottipati": ("person", ["gottipati ravi", "gottipati", "గొట్టిపాటి"]),
+    "p_narayana": ("person", ["minister narayana", "p narayana", "ponguru narayana", "మంత్రి నారాయణ", "పొంగూరు నారాయణ"]),
+    "anitha": ("person", ["vangalapudi anitha", "home minister anitha", "anitha vangalapudi", "వంగలపూడి అనిత", "మంత్రి అనిత"]),
+    "satya_kumar": ("person", ["satya kumar yadav", "satyakumar", "సత్యకుమార్"]),
+    "nimmala": ("person", ["nimmala rama naidu", "nimmala", "నిమ్మల రామానాయుడు", "నిమ్మల"]),
+    "payyavula": ("person", ["payyavula keshav", "payyavula", "పయ్యావుల కేశవ్", "పయ్యావుల"]),
+    "kollu_ravindra": ("person", ["kollu ravindra", "కొల్లు రవీంద్ర"]),
+    "tg_bharath": ("person", ["tg bharath", "t g bharath", "టీజీ భరత్"]),
+    "savitha": ("person", ["minister savitha", "సవిత"]),
+    "sandhya_rani": ("person", ["gummadi sandhya rani", "sandhya rani", "సంధ్యారాణి"]),
+    "bc_janardhan": ("person", ["bc janardhan reddy", "janardhan reddy", "బీసీ జనార్దన్ రెడ్డి"]),
+    "ram_prasad_reddy": ("person", ["kolusu parthasarathy", "parthasarathy", "పార్థసారథి"]),
+    "governor_ap": ("person", ["governor abdul nazeer", "abdul nazeer", "గవర్నర్ నజీర్", "అబ్దుల్ నజీర్"]),
+    # ===================== people: opposition & others =====================
+    "jagan": ("person", ["jagan", "jagan mohan reddy", "ys jagan", "jagan mohan", "జగన్", "జగన్ మోహన్ రెడ్డి", "వైఎస్ జగన్"]),
     "sharmila": ("person", ["sharmila", "ys sharmila", "షర్మిల"]),
+    "sajjala": ("person", ["sajjala", "sajjala ramakrishna reddy", "సజ్జల"]),
+    "botsa": ("person", ["botsa", "botcha", "botsa satyanarayana", "బొత్స"]),
+    "ambati": ("person", ["ambati rambabu", "ambati", "అంబటి రాంబాబు", "అంబటి"]),
+    "perni_nani": ("person", ["perni nani", "perni venkataramaiah", "పేర్ని నాని"]),
+    "roja": ("person", ["rk roja", "roja", "రోజా"]),
+    "kodali_nani": ("person", ["kodali nani", "కొడాలి నాని"]),
+    "anil_kumar_yadav": ("person", ["anil kumar yadav", "అనిల్ కుమార్ యాదవ్"]),
+    "palla": ("person", ["palla srinivasa rao", "palla srinivas", "పల్లా శ్రీనివాసరావు", "పల్లా"]),
+    "somireddy": ("person", ["somireddy", "somireddy chandramohan", "సోమిరెడ్డి"]),
+    "bonda_uma": ("person", ["bonda uma", "బొండా ఉమా"]),
+    "purandeswari": ("person", ["purandeswari", "purandeshwari", "పురందేశ్వరి"]),
+    "pvn_madhav": ("person", ["pvn madhav", "పీవీఎన్ మాధవ్"]),
+    "vijayasai": ("person", ["vijayasai reddy", "vijaya sai reddy", "విజయసాయి రెడ్డి"]),
     "modi": ("person", ["narendra modi", "modi", "prime minister", "మోదీ", "ప్రధాని"]),
+    "amit_shah": ("person", ["amit shah", "అమిత్ షా"]),
     "revanth": ("person", ["revanth reddy", "రేవంత్", "రేవంత్ రెడ్డి"]),
     "kcr": ("person", ["kcr", "chandrashekar rao", "కేసీఆర్"]),
-
-    # --- places ---
+    "ktr": ("person", ["ktr", "kt rama rao", "కేటీఆర్"]),
+    # ===================== people: film & sport (searched constantly) =====================
+    "prabhas": ("person", ["prabhas", "ప్రభాస్"]),
+    "mahesh_babu": ("person", ["mahesh babu", "మహేష్ బాబు", "మహేశ్ బాబు"]),
+    "ntr_jr": ("person", ["jr ntr", "ntr", "tarak", "ఎన్టీఆర్", "తారక్"]),
+    "ram_charan": ("person", ["ram charan", "రామ్ చరణ్"]),
+    "allu_arjun": ("person", ["allu arjun", "bunny", "అల్లు అర్జున్"]),
+    "chiranjeevi": ("person", ["chiranjeevi", "megastar", "చిరంజీవి", "మెగాస్టార్"]),
+    "balakrishna": ("person", ["balakrishna", "balayya", "బాలకృష్ణ", "బాలయ్య"]),
+    "nagarjuna": ("person", ["nagarjuna", "నాగార్జున"]),
+    "vijay_deverakonda": ("person", ["vijay deverakonda", "విజయ్ దేవరకొండ"]),
+    "rajamouli": ("person", ["rajamouli", "రాజమౌళి"]),
+    "samantha": ("person", ["samantha", "సమంత"]),
+    "rashmika": ("person", ["rashmika", "రష్మిక"]),
+    "anushka": ("person", ["anushka shetty", "అనుష్క"]),
+    "nayanthara": ("person", ["nayanthara", "నయనతార"]),
+    "kohli": ("person", ["virat kohli", "kohli", "కోహ్లీ"]),
+    "rohit": ("person", ["rohit sharma", "రోహిత్ శర్మ"]),
+    "bumrah": ("person", ["bumrah", "బుమ్రా"]),
+    # ===================== places: districts (all 26) =====================
+    "andhra_pradesh": ("place", ["andhra pradesh", "andhra", "ap govt", "ఆంధ్రప్రదేశ్", "ఆంధ్ర", "ఏపీ"]),
     "amaravati": ("place", ["amaravati", "amaravathi", "అమరావతి"]),
-    "visakhapatnam": ("place", ["visakhapatnam", "vizag", "vishakhapatnam", "విశాఖపట్నం", "విశాఖ", "వైజాగ్"]),
-    "vijayawada": ("place", ["vijayawada", "bezawada", "విజయవాడ"]),
-    "guntur": ("place", ["guntur", "గుంటూరు"]),
-    "tirupati": ("place", ["tirupati", "తిరుపతి"]),
-    "tirumala": ("place", ["tirumala", "తిరుమల"]),
-    "nellore": ("place", ["nellore", "నెల్లూరు"]),
-    "kurnool": ("place", ["kurnool", "కర్నూలు"]),
-    "kadapa": ("place", ["kadapa", "cuddapah", "కడప"]),
-    "anantapur": ("place", ["anantapur", "అనంతపురం"]),
-    "rajahmundry": ("place", ["rajahmundry", "rajamahendravaram", "రాజమహేంద్రవరం", "రాజమండ్రి"]),
-    "kakinada": ("place", ["kakinada", "కాకినాడ"]),
     "srikakulam": ("place", ["srikakulam", "శ్రీకాకుళం"]),
     "vizianagaram": ("place", ["vizianagaram", "విజయనగరం"]),
+    "parvathipuram": ("place", ["parvathipuram", "parvathipuram manyam", "పార్వతీపురం"]),
+    "alluri": ("place", ["alluri sitharama raju district", "alluri district", "asr district", "అల్లూరి జిల్లా", "అల్లూరి సీతారామరాజు జిల్లా"]),
+    "visakhapatnam": ("place", ["visakhapatnam", "vizag", "vishakhapatnam", "విశాఖపట్నం", "విశాఖ", "వైజాగ్"]),
+    "anakapalli": ("place", ["anakapalli", "anakapalle", "అనకాపల్లి"]),
+    "kakinada": ("place", ["kakinada", "కాకినాడ"]),
+    "konaseema": ("place", ["konaseema", "amalapuram", "కోనసీమ", "అమలాపురం"]),
+    "east_godavari": ("place", ["east godavari", "తూర్పు గోదావరి"]),
+    "rajahmundry": ("place", ["rajahmundry", "rajamahendravaram", "రాజమహేంద్రవరం", "రాజమండ్రి"]),
+    "west_godavari": ("place", ["west godavari", "bhimavaram", "పశ్చిమ గోదావరి", "భీమవరం"]),
     "eluru": ("place", ["eluru", "ఏలూరు"]),
-    "ongole": ("place", ["ongole", "ఒంగోలు", "prakasam", "ప్రకాశం"]),
+    "krishna_district": ("place", ["krishna district", "machilipatnam", "gudivada", "కృష్ణా జిల్లా", "మచిలీపట్నం", "గుడివాడ"]),
+    "ntr_district": ("place", ["ntr district", "ఎన్టీఆర్ జిల్లా"]),
+    "vijayawada": ("place", ["vijayawada", "bezawada", "విజయవాడ"]),
+    "guntur": ("place", ["guntur", "గుంటూరు"]),
+    "mangalagiri": ("place", ["mangalagiri", "tadepalli", "మంగళగిరి", "తాడేపల్లి"]),
+    "palnadu": ("place", ["palnadu", "narasaraopet", "పల్నాడు", "నరసరావుపేట"]),
+    "bapatla": ("place", ["bapatla", "chirala", "బాపట్ల", "చీరాల"]),
+    "ongole": ("place", ["ongole", "prakasam", "ఒంగోలు", "ప్రకాశం"]),
+    "nellore": ("place", ["nellore", "kavali", "gudur", "నెల్లూరు", "కావలి", "గూడూరు"]),
+    "tirupati": ("place", ["tirupati", "తిరుపతి"]),
+    "tirumala": ("place", ["tirumala", "తిరుమల"]),
     "chittoor": ("place", ["chittoor", "చిత్తూరు"]),
+    "annamayya": ("place", ["annamayya district", "rayachoti", "madanapalle", "అన్నమయ్య జిల్లా", "రాయచోటి", "మదనపల్లె"]),
+    "kadapa": ("place", ["kadapa", "cuddapah", "proddatur", "కడప", "ప్రొద్దుటూరు"]),
+    "kurnool": ("place", ["kurnool", "adoni", "కర్నూలు", "ఆదోని"]),
+    "nandyal": ("place", ["nandyal", "నంద్యాల"]),
+    "anantapur": ("place", ["anantapur", "anantapuram", "అనంతపురం"]),
+    "sri_sathya_sai": ("place", ["sri sathya sai district", "puttaparthi", "hindupur", "dharmavaram",
+                                 "శ్రీ సత్యసాయి జిల్లా", "పుట్టపర్తి", "హిందూపురం", "ధర్మవరం"]),
+    # ===================== places: landmarks & projects =====================
     "bhogapuram": ("place", ["bhogapuram", "భోగాపురం"]),
     "pithapuram": ("place", ["pithapuram", "పిఠాపురం"]),
-    "andhra_pradesh": ("place", ["andhra pradesh", "andhra", "ap govt", "ఆంధ్రప్రదేశ్", "ఆంధ్ర", "ఏపీ"]),
+    "araku": ("place", ["araku", "అరకు"]),
+    "simhachalam": ("place", ["simhachalam", "సింహాచలం"]),
+    "srisailam": ("place", ["srisailam", "శ్రీశైలం"]),
+    "rayalaseema": ("place", ["rayalaseema", "రాయలసీమ"]),
+    "uttarandhra": ("place", ["uttarandhra", "north andhra", "ఉత్తరాంధ్ర"]),
     "godavari": ("place", ["godavari", "గోదావరి"]),
-    "krishna_river": ("place", ["krishna river", "krishna district", "కృష్ణా"]),
-
-    # --- orgs / parties ---
+    "krishna_river": ("place", ["krishna river", "కృష్ణా నది", "కృష్ణానది"]),
+    "polavaram": ("place", ["polavaram", "పోలవరం"]),
+    "gangavaram": ("place", ["gangavaram port", "గంగవరం"]),
+    # ===================== orgs =====================
     "tdp": ("org", ["tdp", "telugu desam", "టీడీపీ", "తెలుగుదేశం"]),
-    "ysrcp": ("org", ["ysrcp", "ysr congress", "వైసీపీ", "వైఎస్సార్సీపీ"]),
+    "ysrcp": ("org", ["ysrcp", "ysr congress", "ycp", "వైసీపీ", "వైఎస్సార్సీపీ"]),
     "janasena": ("org", ["jana sena", "janasena", "జనసేన"]),
     "bjp": ("org", ["bjp", "బీజేపీ", "భాజపా"]),
     "congress": ("org", ["congress", "కాంగ్రెస్"]),
+    "brs": ("org", ["brs", "బీఆర్ఎస్", "బీఆర్‌ఎస్"]),
     "ttd": ("org", ["ttd", "tirumala tirupati devasthanams", "టీటీడీ"]),
     "apsrtc": ("org", ["apsrtc", "rtc", "ఆర్టీసీ"]),
     "imd": ("org", ["imd", "met department", "weather department", "వాతావరణ శాఖ"]),
     "appsc": ("org", ["appsc", "ఏపీపీఎస్సీ"]),
-
-    # --- topics ---
-    "polavaram": ("topic", ["polavaram", "పోలవరం"]),
+    "ap_assembly": ("org", ["ap assembly", "andhra assembly", "assembly session", "ఏపీ అసెంబ్లీ", "అసెంబ్లీ", "శాసనసభ"]),
+    "ap_cabinet": ("org", ["ap cabinet", "state cabinet", "cabinet meeting", "ఏపీ కేబినెట్", "క్యాబినెట్", "మంత్రివర్గం"]),
+    "ap_high_court": ("org", ["ap high court", "andhra pradesh high court", "ఏపీ హైకోర్టు"]),
+    "apspdcl": ("org", ["apspdcl", "apepdcl", "discom", "విద్యుత్ శాఖ"]),
+    "andhra_university": ("org", ["andhra university", "ఆంధ్ర యూనివర్సిటీ", "ఏయూ"]),
+    "svu": ("org", ["sri venkateswara university", "svu", "ఎస్వీ యూనివర్సిటీ"]),
+    "cid_ap": ("org", ["ap cid", "cid", "సీఐడీ"]),
+    "cbi": ("org", ["cbi", "సీబీఐ"]),
+    "ed": ("org", ["enforcement directorate", "ఈడీ"]),
+    "dsc": ("org", ["dsc", "mega dsc", "డీఎస్సీ"]),
+    # ===================== topics =====================
     "flood": ("topic", ["flood", "floods", "inundation", "వరద", "వరదలు", "ముంపు"]),
     "rain": ("topic", ["rain", "rains", "rainfall", "downpour", "వర్షం", "వర్షాలు", "వాన"]),
     "cyclone": ("topic", ["cyclone", "depression", "low pressure", "తుఫాన్", "అల్పపీడనం"]),
@@ -313,27 +418,15 @@ LEXICON: dict[str, tuple[str, list[str]]] = {
     "power_cut": ("topic", ["power cut", "electricity tariff", "కరెంట్", "విద్యుత్"]),
     "pension": ("topic", ["pension", "welfare scheme", "పింఛను", "పెన్షన్"]),
     "farmer": ("topic", ["farmer", "farmers", "crop", "paddy", "రైతు", "రైతులు", "పంట"]),
+    "gold_price": ("topic", ["gold rate", "gold price", "బంగారం ధర", "బంగారం ధరలు"]),
+    "petrol": ("topic", ["petrol price", "diesel price", "పెట్రోల్ ధర"]),
+    "local_body": ("topic", ["local body elections", "panchayat elections", "municipal elections", "స్థానిక ఎన్నికలు", "పంచాయతీ ఎన్నికలు"]),
+    "capital": ("topic", ["capital city", "three capitals", "రాజధాని"]),
+    "ganja": ("topic", ["ganja", "drugs", "narcotics", "గంజాయి", "డ్రగ్స్"]),
+    "vinayaka_chavithi": ("topic", ["vinayaka chavithi", "ganesh chaturthi", "vinayaka", "వినాయక చవితి", "వినాయకుడు"]),
+    "dasara": ("topic", ["dasara", "dussehra", "దసరా"]),
+    "sankranti": ("topic", ["sankranti", "సంక్రాంతి"]),
 }
-
-# --------------------------------------------------------------------------
-# Beats — a one-word label per story so a desk can scan a board by colour.
-# First match wins, so the order is the priority: a politician commenting on
-# a flood is a weather story.
-# --------------------------------------------------------------------------
-
-BEATS: list[tuple[str, set[str]]] = [
-    ("weather", {"rain", "flood", "cyclone", "heatwave", "imd", "godavari", "krishna_river"}),
-    ("crime",   {"arrest", "murder", "accident", "liquor_scam", "court"}),
-    ("faith",   {"tirumala", "ttd"}),
-    ("exams",   {"results", "exam", "jobs", "appsc"}),
-    ("infra",   {"polavaram", "power_cut", "bhogapuram", "apsrtc"}),
-    ("civic",   {"protest", "pension", "farmer"}),
-    ("cinema",  {"cinema"}),
-    ("sport",   {"cricket"}),
-    ("politics", {"chandrababu_naidu", "jagan", "pawan_kalyan", "lokesh", "sharmila",
-                  "naga_babu", "modi", "revanth", "kcr", "tdp", "ysrcp", "janasena",
-                  "bjp", "congress"}),
-]
 
 # Words too common to be worth clustering on.
 STOPWORDS = set("""
@@ -349,11 +442,12 @@ ap andhra pradesh india indian live video watch photos photo full big top
 # --------------------------------------------------------------------------
 
 WEIGHTS = {
-    "trend": 0.34,          # matches a live Google search trend
-    "acceleration": 0.22,   # coverage rate rising vs its own recent baseline
-    "corroboration": 0.20,  # independent outlets carrying it
-    "velocity": 0.14,       # raw items per hour
-    "freshness": 0.10,      # decay
+    "trend": 0.32,          # matches a live Google search trend
+    "acceleration": 0.20,   # coverage rate rising vs its own recent baseline
+    "corroboration": 0.18,  # independent outlets carrying it
+    "prominence": 0.12,     # how high Google News ranks it on its front page
+    "velocity": 0.10,       # raw items per hour
+    "freshness": 0.08,      # decay
 }
 
 # Locality multiplier applied to the weighted sum. A clearly-AP story scores at

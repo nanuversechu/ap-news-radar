@@ -67,11 +67,61 @@ check(score.item_age(row) >= score.STALE, "unparseable date is STALE")
 row = {"published_at": None, "first_seen": now.isoformat()}
 check(score.item_age(row) < 1, "genuinely undated falls back to discovery time")
 
-# --- beats ------------------------------------------------------------------
-check(score.beat_for({"pawan_kalyan", "flood"}) == "weather", "politician + flood is a weather story")
-check(score.beat_for({"chandrababu_naidu"}) == "politics", "politician alone is politics")
-check(score.beat_for({"tirumala", "arrest"}) == "crime", "arrest at Tirumala is crime first")
-check(score.beat_for(set()) == "general", "no entities -> general")
+# --- prominence from Google's front-page rank ------------------------------
+class _R(dict):
+    def __getitem__(self, k): return dict.get(self, k)
+
+def _cluster(items):
+    cl = {"id": 1, "title": items[0]["title"], "first_seen": now.isoformat(), "peak_score": 0}
+    return score._score_cluster(cl, [_R(**i) for i in items], [])
+
+_base = {"url": "http://x", "outlet": "A", "domain": "a", "lang": "en", "kind": "news",
+         "published_at": (now - timedelta(minutes=10)).isoformat(), "first_seen": now.isoformat()}
+r1 = _cluster([{**_base, "title": "Chandrababu opens Bhogapuram terminal", "rank": 1}])
+r30 = _cluster([{**_base, "title": "Chandrababu opens Bhogapuram terminal", "rank": 30}])
+r0 = _cluster([{**_base, "title": "Chandrababu opens Bhogapuram terminal", "rank": None}])
+check(r1["breakdown"]["prominence"] == 1.0, "rank 1 on the front page is full prominence")
+check(r30["breakdown"]["prominence"] < 0.05, "rank 30 is worth about nothing")
+check(r0["breakdown"]["prominence"] == 0.0 and r0["front_page_rank"] is None, "unranked has no prominence")
+check(r1["score"] > r0["score"], "front-page rank raises the score")
+
+# --- trend coverage: demand against supply ---------------------------------
+board = [
+    {"id": 1, "title": "Pawan Kalyan to visit Visakhapatnam today", "outlets": ["TV9", "NTV", "Sakshi"], "score": 60.0},
+    {"id": 2, "title": "పవన్ కళ్యాణ్ విశాఖపట్నంలో పర్యటన", "outlets": ["10TV"], "score": 40.0},
+    {"id": 3, "title": "Chandrababu reviews Polavaram works", "outlets": ["Hindu"], "score": 50.0},
+]
+trends = [
+    {"query": "పవన్ కళ్యాణ్", "geo": "IN-AP", "geo_label": "Andhra Pradesh", "traffic": 500,
+     "rising": 0.6, "first_seen": now.isoformat(), "entities": {"pawan_kalyan"}, "news": []},
+    {"query": "asitha fernando", "geo": "IN-AP", "geo_label": "Andhra Pradesh", "traffic": 200,
+     "rising": 0.5, "first_seen": now.isoformat(), "entities": set(), "news": []},
+    {"query": "ఆవు", "geo": "IN-AP", "geo_label": "Andhra Pradesh", "traffic": 200,
+     "rising": 0.5, "first_seen": now.isoformat(), "entities": set(), "news": []},
+]
+gaps = score.trend_coverage(trends, board)
+check(trends[0]["coverage_outlets"] == 4 and set(trends[0]["coverage_ids"]) == {1, 2},
+      "Pawan trend is covered by both language clusters, 4 distinct outlets")
+check(trends[0]["local"] is True, "a trend naming an AP politician is local")
+check(trends[1]["coverage_outlets"] == 0 and trends[1]["local"] is False, "cricketer: uncovered, not local")
+check([g["query"] for g in gaps] == ["asitha fernando"], "only the substantive uncovered query is a gap")
+
+# --- only Telugu and Latin scripts are a Telugu desk's business ---------------
+from radar import lexicon as L
+check(L.desk_script("పవన్ కళ్యాణ్"), "Telugu query is admitted")
+check(L.desk_script("bangladesh vs uae"), "Latin query is admitted")
+check(L.desk_script("Vijayawada: వరద హెచ్చరిక"), "mixed Telugu/Latin is admitted")
+check(not L.desk_script("कल का मौसम"), "Hindi query is refused")
+check(not L.desk_script("बिबट्या"), "Marathi query is refused")
+check(not L.desk_script("ಬೆಂಗಳೂರು ಮಳೆ"), "Kannada query is refused")
+
+# --- resume-safe sleep ----------------------------------------------------
+import time as _t
+from radar import poll
+end_mono = _t.monotonic() + 240
+end_wall = _t.time() - 5          # the wall clock says the interval is already over
+check(poll.sleep_remaining(end_mono, end_wall) == 0.0, "wall clock past the deadline ends the sleep at once")
+check(poll.sleep_remaining(_t.monotonic() + 60, _t.time() + 60) > 55, "otherwise the remaining time is honoured")
 
 # --- trend direction against ~30 minutes ago ---------------------------------
 store.init()
@@ -110,6 +160,6 @@ store.record_source("X", "http://x", "news", True, count=5, ms=100)
 h = {r["name"]: r for r in store.source_health()}["X"]
 check(h["failures"] == 0, "a success resets the consecutive count")
 
-total = 36
+total = 52
 print(f"{total - failures}/{total} passed")
 sys.exit(1 if failures else 0)

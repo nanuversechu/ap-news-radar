@@ -18,13 +18,18 @@ def _fingerprint(title: str, outlet: str) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:20]
 
 
-def _record(name: str, url: str, kind: str, res: net.Result, count: int) -> None:
+def _record(name: str, url: str, kind: str, res: net.Result, count: int,
+            fresh: int = 0) -> None:
     """A source is healthy when it answered *and* gave us something to parse."""
     ok = res.ok and count > 0
     err = res.error or ("" if res.ok else f"HTTP {res.status}")
     if res.ok and count == 0:
         err = "empty feed"
-    store.record_source(name, url, kind, ok, count=count, ms=res.ms, error=err)
+    store.record_source(name, url, kind, ok, count=count, ms=res.ms, error=err, fresh=fresh)
+
+
+def _fresh_count(items: list[dict]) -> int:
+    return sum(1 for it in items if is_fresh(it.get("published")))
 
 
 def is_fresh(published, *, allow_undated: bool = False) -> bool:
@@ -69,8 +74,8 @@ def ingest(items: list[dict]) -> tuple[int, int]:
         cur = c.execute(
             """INSERT OR IGNORE INTO items
                (fingerprint, title, url, domain, outlet, lang, kind,
-                published_at, first_seen, entities)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                published_at, first_seen, entities, rank)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 fp, title, it.get("url", ""), feeds.domain_of(it.get("url", "")),
                 outlet or "", "te" if lexicon.is_telugu(title) else "en",
@@ -78,10 +83,15 @@ def ingest(items: list[dict]) -> tuple[int, int]:
                 published.isoformat() if isinstance(published, datetime) else None,
                 now,
                 ",".join(sorted(lexicon.entities(title))),
+                it.get("rank"),
             ),
         )
         if cur.rowcount:
             added += 1
+        elif it.get("rank"):
+            # Already seen from a query feed; the front-page rank is new news.
+            c.execute("UPDATE items SET rank=MIN(COALESCE(rank, 999), ?) WHERE fingerprint=?",
+                      (it["rank"], fp))
     return added, stale
 
 
@@ -114,6 +124,8 @@ def collect_trends() -> list[dict]:
         _record(f"Google Trends · {label}", url, "trends", res, len(entries))
         for rank, entry in enumerate(entries, start=1):
             query = entry["query"]
+            if not lexicon.desk_script(query):
+                continue  # Hindi, Marathi, Tamil…: not this desk's readers
             ents = ",".join(sorted(lexicon.entities(query)))
             row = c.execute(
                 "SELECT traffic, rank, peak_traffic, first_seen FROM trends "
@@ -327,7 +339,8 @@ def chase_trends(trends: list[dict]) -> list[dict]:
 # Publisher, geo and social feeds
 # --------------------------------------------------------------------------
 
-def _collect_feeds(sources: list[tuple[str, str]], kind: str, per_feed: int) -> list[dict]:
+def _collect_feeds(sources: list[tuple[str, str]], kind: str, per_feed: int,
+                   *, ranked: bool = False) -> list[dict]:
     url_map = {url: name for name, url in sources}
     if not url_map:
         return []
@@ -336,21 +349,107 @@ def _collect_feeds(sources: list[tuple[str, str]], kind: str, per_feed: int) -> 
     for url, res in responses.items():
         name = url_map[url]
         items = feeds.parse_items(res.body) if res.body else []
-        _record(name, url, kind, res, len(items))
-        for item in items[:per_feed]:
+        batch: list[dict] = []
+        for rank, item in enumerate(items[:per_feed], start=1):
             title = item["title"]
             outlet = name
-            if kind == "news" and name.startswith("Google News"):
+            if name.startswith("Google News"):
                 title, outlet = feeds.split_google_title(title)
                 outlet = outlet or name
-            out.append({
+            batch.append({
                 "title": title,
                 "url": item["link"],
                 "outlet": outlet,
                 "published": item["published"],
                 "kind": kind,
+                "rank": rank if ranked else None,
             })
+        _record(name, url, kind, res, len(items), fresh=_fresh_count(batch))
+        out += batch
     return out
+
+
+def collect_top_stories() -> list[dict]:
+    """Google's front page for Telugu and English readers, rank kept."""
+    return _collect_feeds(config.GOOGLE_NEWS_TOP, "news", 40, ranked=True)
+
+
+def collect_topics() -> list[dict]:
+    """Every Google News section, both languages."""
+    return _collect_feeds(config.GOOGLE_NEWS_TOPICS, "news", 40)
+
+
+# --------------------------------------------------------------------------
+# What people are reading: most-read feeds and Wikipedia's top pages
+# --------------------------------------------------------------------------
+
+def collect_reading() -> int:
+    """Most-read / most-shared lists into the `reading` table. Returns rows."""
+    url_map = {url: name for name, url in config.READING_FEEDS}
+    if not url_map:
+        return 0
+    responses = net.fetch_all_results(list(url_map))
+    c = store.conn()
+    now = store.now_iso()
+    rows = 0
+    for url, res in responses.items():
+        name = url_map[url]
+        items = feeds.parse_items(res.body) if res.body else []
+        _record(name, url, "reading", res, len(items), fresh=len(items))
+        if items:
+            c.execute("DELETE FROM reading WHERE source=?", (name,))
+        for rank, item in enumerate(items[:20], start=1):
+            c.execute(
+                "INSERT OR REPLACE INTO reading(source, title, url, rank, views, ts) "
+                "VALUES (?,?,?,?,?,?)",
+                (name, item["title"], item["link"], rank, None, now),
+            )
+            rows += 1
+    return rows
+
+
+_WIKI_SKIP = ("మొదటి_పేజీ", "దస్త్రం:", "ప్రత్యేక:", "వికీపీడియా:", "వాడుకరి:", "చర్చ:",
+              "Main_Page", "Special:", "File:", "Wikipedia:", "User:", "Talk:", "-")
+
+
+def collect_wiki_top() -> int:
+    """Yesterday's most-viewed pages per project. Daily data, labelled as such."""
+    c = store.conn()
+    now = datetime.now(timezone.utc)
+    y = now - timedelta(days=1)
+    rows = 0
+    for proj, label in config.WIKI_PROJECTS:
+        url = (f"https://wikimedia.org/api/rest_v1/metrics/pageviews/top/{proj}/all-access/"
+               f"{y:%Y}/{y:%m}/{y:%d}")
+        res = net.fetch_result(url, retries=1)
+        arts = []
+        if res.ok:
+            try:
+                import json
+                arts = json.loads(res.body)["items"][0]["articles"]
+            except (ValueError, KeyError, IndexError, TypeError):
+                arts = []
+        name = f"{label} · read yesterday"
+        _record(name, url, "reading", res, len(arts), fresh=len(arts))
+        if not arts:
+            continue
+        c.execute("DELETE FROM reading WHERE source=?", (name,))
+        kept = 0
+        for a in arts:
+            title = a.get("article", "")
+            if not title or title.startswith(_WIKI_SKIP) or ":" in title.split("_")[0]:
+                continue
+            kept += 1
+            c.execute(
+                "INSERT OR REPLACE INTO reading(source, title, url, rank, views, ts) "
+                "VALUES (?,?,?,?,?,?)",
+                (name, title.replace("_", " "), f"https://{proj}.org/wiki/{title}",
+                 kept, a.get("views"), store.now_iso()),
+            )
+            rows += 1
+            if kept >= config.WIKI_TOP_N:
+                break
+    return rows
 
 
 def collect_publishers() -> list[dict]:
