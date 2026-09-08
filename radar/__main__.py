@@ -68,8 +68,6 @@ def _check() -> None:
     for name, url in config.GOOGLE_NEWS_TOP + config.GOOGLE_NEWS_TOPICS + config.GEO_FEEDS:
         probe(name, url)
     print("Reading signals")
-    for name, url in config.READING_FEEDS:
-        probe(name, url)
     from datetime import datetime, timedelta, timezone
     y = datetime.now(timezone.utc) - timedelta(days=1)
     for proj, label in config.WIKI_PROJECTS:

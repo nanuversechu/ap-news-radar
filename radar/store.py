@@ -244,4 +244,13 @@ def housekeeping() -> None:
     )
     c.execute("DELETE FROM trends WHERE last_seen < ?", (cutoff,))
     c.execute("DELETE FROM reading WHERE ts < ?", (hist_cutoff,))
+    # A source that has been removed from config stops being written to; after
+    # two days without a poll its row is retired so the strip stays truthful.
+    # SQLite's scalar MAX() returns NULL if any argument is NULL, which would
+    # retire every source that has never failed. Coalesce each side first.
+    c.execute(
+        "DELETE FROM source_health "
+        "WHERE MAX(COALESCE(last_ok, ''), COALESCE(last_fail, '')) < ?",
+        (hist_cutoff,),
+    )
     c.execute("PRAGMA wal_checkpoint(TRUNCATE)")

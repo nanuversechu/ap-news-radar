@@ -38,6 +38,12 @@ COOLDOWN_5XX = 5 * 60
 OMARCHY_STATE_DIR = os.environ.get(
     "OMARCHY_STATE", os.path.expanduser("~/.local/state/omarchy/current"))
 OMARCHY_THEME_DIR = os.path.join(OMARCHY_STATE_DIR, "theme")
+# What the status bar calls a theme. Omarchy names generated themes after the
+# wallpaper file; this maps that to a name worth reading. Keys are the theme
+# name lower-cased with spaces as hyphens. RADAR_THEME_LABEL overrides all.
+THEME_LABELS = {
+    "wallhaven-w5ly": "Prometheus",
+}
 
 # --------------------------------------------------------------------------
 # Poll cadence (seconds)
@@ -161,13 +167,6 @@ GOOGLE_NEWS_TOPICS: list[tuple[str, str]] = [
 ] + [
     (f"Google News · {t.lower()} (en)", f"{_GN}/headlines/section/topic/{t}?hl=en-IN&gl=IN&ceid=IN:en")
     for t in ("NATION", "BUSINESS", "ENTERTAINMENT", "SPORTS")
-]
-
-# What people are *reading*, as opposed to searching. National, so each item
-# is marked AP-local or not by the lexicon; still worth a desk's glance.
-READING_FEEDS: list[tuple[str, str]] = [
-    ("Times of India · most read", "https://timesofindia.indiatimes.com/rssfeedmostread.cms"),
-    ("Times of India · most shared", "https://timesofindia.indiatimes.com/rssfeedmostshared.cms"),
 ]
 
 # Wikipedia's most-viewed pages. The pageviews API is daily-only per article,

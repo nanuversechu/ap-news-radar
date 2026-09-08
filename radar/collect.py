@@ -384,31 +384,6 @@ def collect_topics() -> list[dict]:
 # What people are reading: most-read feeds and Wikipedia's top pages
 # --------------------------------------------------------------------------
 
-def collect_reading() -> int:
-    """Most-read / most-shared lists into the `reading` table. Returns rows."""
-    url_map = {url: name for name, url in config.READING_FEEDS}
-    if not url_map:
-        return 0
-    responses = net.fetch_all_results(list(url_map))
-    c = store.conn()
-    now = store.now_iso()
-    rows = 0
-    for url, res in responses.items():
-        name = url_map[url]
-        items = feeds.parse_items(res.body) if res.body else []
-        _record(name, url, "reading", res, len(items), fresh=len(items))
-        if items:
-            c.execute("DELETE FROM reading WHERE source=?", (name,))
-        for rank, item in enumerate(items[:20], start=1):
-            c.execute(
-                "INSERT OR REPLACE INTO reading(source, title, url, rank, views, ts) "
-                "VALUES (?,?,?,?,?,?)",
-                (name, item["title"], item["link"], rank, None, now),
-            )
-            rows += 1
-    return rows
-
-
 _WIKI_SKIP = ("మొదటి_పేజీ", "దస్త్రం:", "ప్రత్యేక:", "వికీపీడియా:", "వాడుకరి:", "చర్చ:",
               "Main_Page", "Special:", "File:", "Wikipedia:", "User:", "Talk:", "-")
 

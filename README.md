@@ -101,15 +101,18 @@ Four panels, in the order a desk needs them.
 2. **Trailing** — searches that were trending and have dropped off in the last
    90 minutes, with what they peaked at. A story that has stopped rising is as
    useful to know as one that has started.
-3. **Reading** — what people are reading, as opposed to searching: the Times of
-   India most-read and most-shared lists (national, so only the AP items are
-   shown, with an honest "2 of 10 about AP"), and Telugu Wikipedia's most-viewed
-   pages. Wikipedia's pageview data is daily, so that list is *yesterday* and
-   says so. Each item is marked `✓ on board` when a story on the board matches
-   it.
+3. **Reading** — what people are reading, as opposed to searching: Telugu
+   Wikipedia's most-viewed pages. The pageview data is daily, so the list is
+   *yesterday* and says so. Each page is marked `✓ on board` when a story on
+   the board matches it. (Times of India's most-read lists were tried and
+   dropped: national, and never about AP.)
 4. **Story board** — everything published in the last two hours, scored, with
    direction arrows (`▲ +15`), outlet counts (`+2` when more newsrooms picked it
    up), and `GN #3` when Google's own front page ranks it.
+
+**Hover any score** for what it is made of: the six components with their
+percentages, the direction against fifteen minutes ago, and what each bar
+under the number means.
 
 **Keyboard**: `/` filter · `j` `k` move · `o` open · `1`–`5` tabs · `s`
 sources · `esc` clear (or drop the search filter).
@@ -141,7 +144,6 @@ alert age limit, the acceleration comparison — keys off that one number.
 | Coverage of what's rising | Google News searched for each rising trend | free, keyless | 5 min |
 | City sections | Google News geo feeds for Visakhapatnam, Amaravati, Vijayawada | free, keyless | 15 min |
 | AP newspapers | 17 publisher RSS feeds (below) | free | 15 min |
-| What people are reading | Times of India most-read and most-shared | free, keyless | 15 min |
 | What Telugu readers looked up | Telugu Wikipedia most-viewed pages (daily data) | free, keyless | hourly |
 | Chatter | Reddit r/andhrapradesh (marked ◆ social) | free, keyless | 15 min |
 | ~~Telugu TV~~ | ~~7 YouTube channel RSS feeds~~ | **dead since 18 Aug 2026** — see below | — |
@@ -153,7 +155,7 @@ The seventeen publisher feeds: **The Hindu** (AP, Vijayawada, Visakhapatnam),
 Visakhapatnam). Government releases arrive through a `site:pib.gov.in` search
 feed, since PIB's own RSS is broken.
 
-Every source's outcome is recorded each poll — 44 of them. The status bar shows `src 44/44`;
+Every source's outcome is recorded each poll — 42 of them. The status bar shows `src 44/44`;
 click it (or press `s`) for the table — items, latency, last success, and the
 error when there is one. A source is "ok" only when it answered *and* returned
 something parseable; a 200 with an empty body counts as a failure, and a feed

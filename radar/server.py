@@ -182,7 +182,7 @@ __THEME_VARS__
 <div id="srcpanel" hidden></div>
 
 <div class="wrap">
-  <div class="sec"><b>Searching now</b><span class="note">Andhra Pradesh · click a search to see what answers it</span>
+  <div class="sec"><b>Searching now</b>
     <span class="rule"></span><span class="n" id="n-tr"></span></div>
   <div class="grid" id="trends"></div>
 
@@ -190,7 +190,7 @@ __THEME_VARS__
     <span class="rule"></span><span class="n" id="n-trail"></span></div>
   <div class="chips" id="trailing"></div>
 
-  <div class="sec"><b>Reading</b><span class="note">most-read lists · national, AP items marked</span>
+  <div class="sec"><b>Reading</b><span class="note">Telugu Wikipedia · most-viewed pages yesterday</span>
     <span class="rule"></span><span class="n" id="n-rd"></span></div>
   <div id="reading"></div>
 
@@ -240,7 +240,7 @@ function trendCell(t,i){
             : n===1 ? '<span class="cov none">1 outlet</span>'
             : `<span class="cov">${n} outlets</span>`;
   const title=`${t.geo_label} · rising ${Math.round((t.rising||0)*100)}%`+(t.delta?` · ${t.delta}`:'')
-    +(t.local?' · names an AP place or person':'');
+    +(t.local?' · names an AP place or person':'')+'\nclick to show the stories that answer this';
   const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
   const on = TREND && TREND.query===t.query ? 'on' : '';
   return `<div class="cell ${on}" data-i="${i}" title="${esc(title)}">
@@ -256,29 +256,33 @@ function trailChip(t){
 }
 
 function readingRows(list){
-  const by={}; for(const r of list){ (by[r.source]=by[r.source]||[]).push(r); }
-  let html='';
-  for(const [src, all] of Object.entries(by)){
-    // Telugu Wikipedia is Telugu-reader interest by definition and is shown
-    // whole. A national most-read list is shown only where it touches AP.
-    const national=!/wikipedia/i.test(src);
-    const rows = national ? all.filter(r=>r.local) : all;
-    const cov=rows.filter(r=>r.covered).length;
-    html+=`<div class="rdhead">${esc(src)} <i>${national
-      ? `${rows.length} of ${all.length} about AP${rows.length?` · ${cov} on the board`:''}`
-      : `${rows.length} pages · ${all.filter(r=>r.local).length} AP · ${cov} on the board`}</i></div>`;
-    rows.slice(0,12).forEach((r,i)=>{
-      html+=`<a class="rd ${i===0?'first':''}" href="${esc(r.url||'#')}" target="_blank" rel="noopener">
-        <span class="r">${r.views?fmtK(r.views).replace('+',''):'#'+r.rank}</span>
-        <span class="t ${r.local?'':'dim'}">${esc(r.title)}${r.local?' <span class="ap">AP</span>':''}</span>
-        <span class="c ${r.covered?'yes':''}">${r.covered?'✓ on board':'—'}</span></a>`;
-    });
-  }
-  return html;
+  return list.slice(0,15).map((r,i)=>`<a class="rd ${i===0?'first':''}" href="${esc(r.url||'#')}" target="_blank" rel="noopener"
+      title="${r.views?r.views.toLocaleString()+' views yesterday':''}">
+    <span class="r">${r.views?fmtK(r.views).replace('+',''):'#'+r.rank}</span>
+    <span class="t">${esc(r.title)}${r.local?' <span class="ap">AP</span>':''}</span>
+    <span class="c ${r.covered?'yes':''}">${r.covered?'✓ on board':'—'}</span></a>`).join('');
+}
+
+function scoreTitle(c){
+  const b=c.breakdown||{}, d=c.direction||'flat';
+  const pct=v=>String(Math.round((v||0)*100)).padStart(3)+'%';
+  const dir = d==='up'   ? `▲ rising: +${Math.round(c.score_delta)} vs 15 min ago`
+            : d==='down' ? `▼ fading: ${Math.round(c.score_delta)} vs 15 min ago`
+            : d==='new'  ? `● new: first seen this tick`
+            :              `→ flat: unchanged vs 15 min ago`;
+  return [`SCORE ${Math.round(c.score)} of 100 — how likely this grows in the next few hours`, dir, '',
+    `search demand ${pct(b.trend)}  ${c.trend_query?'people are searching "'+c.trend_query+'"':'no live search matches it'}`,
+    `acceleration  ${pct(b.acceleration)}  reports in the last 30 min vs the 90 before`,
+    `outlets       ${pct(b.corroboration)}  ${c.outlet_count} independent newsroom${c.outlet_count===1?'':'s'} carry it`,
+    `front page    ${pct(b.prominence)}  ${c.front_page_rank?'#'+c.front_page_rank+' on Google News top stories':'not on Google News top stories'}`,
+    `velocity      ${pct(b.velocity)}  reports per hour`,
+    `freshness     ${pct(b.freshness)}  newest report ${ago(c.age_min)} ago`, '',
+    `the bars below are these six, in this order`].join('\n');
 }
 
 function row(c,i){
   const t=tier(c.score), d=c.direction||'flat';
+  const tip=esc(scoreTitle(c));
   const langs=(c.languages||[]).map(l=>l==='te'?'తె':'en').join('+');
   const delta = d==='up'||d==='down' ? `<span class="d ${d}-c">${c.score_delta>0?'+':''}${Math.round(c.score_delta)}</span>`
               : d==='new' ? `<span class="d ar new">new</span>` : `<span class="d">&nbsp;</span>`;
@@ -291,9 +295,9 @@ function row(c,i){
       <span class="t">${l.kind==='social'?'◆ ':l.kind==='video'?'▶ ':''}${esc(l.title)}</span>
       <span class="o">${esc(l.outlet)} ${ago(l.age_min)}</span></a>`).join('');
   return `<article class="row ${i===CUR?'cur':''}" data-i="${i}">
-    <div class="gutter">
+    <div class="gutter" title="${tip}">
       <span class="n t-${t}">${arrow(d)}${Math.round(c.score)}</span>${delta}
-      <span class="sp" title="trend accel outlets frontpage velocity fresh">${spark(c.breakdown)}</span>
+      <span class="sp">${spark(c.breakdown)}</span>
     </div>
     <div class="body">
       <h3 class="ttl">${esc(c.title)}${fp}</h3>
@@ -384,8 +388,8 @@ function render(){
   document.getElementById('trailing').innerHTML = trl.length ? trl.map(trailChip).join('') : '<div class="empty" style="border:none">nothing has dropped off in the last 90 minutes</div>';
   document.getElementById('n-trail').textContent = trl.length? trl.length+'' : '';
   const rd=DATA.reading||[];
-  document.getElementById('reading').innerHTML = rd.length ? readingRows(rd) : '<div class="empty">no reading data yet — the most-read lists load on the 15-minute tick</div>';
-  document.getElementById('n-rd').textContent = rd.length ? `${rd.filter(r=>r.local).length} AP items` : '';
+  document.getElementById('reading').innerHTML = rd.length ? readingRows(rd) : '<div class="empty">no reading data yet — Wikipedia loads on the hourly tick</div>';
+  document.getElementById('n-rd').textContent = rd.length ? `${rd.filter(r=>r.covered).length} of ${rd.length} on the board` : '';
 
   const all=DATA.board||[];
   const b=all.filter(keep);

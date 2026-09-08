@@ -119,10 +119,8 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
         stats["youtube"] = len(yt)
         items += yt
 
-    if slow:
-        stats["reading"] = collect.collect_reading()
     if hourly:
-        stats["reading"] += collect.collect_wiki_top()
+        stats["reading"] = collect.collect_wiki_top()
 
     stats["new_items"], stats["too_old"] = collect.ingest(items)
     cluster.assign_clusters()

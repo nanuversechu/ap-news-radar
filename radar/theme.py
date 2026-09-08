@@ -168,7 +168,8 @@ def _read_omarchy() -> dict | None:
     except OSError:
         pass
     raw = {k: v for k, v in raw.items() if isinstance(v, str)}
-    raw["name"] = name
+    key = name.strip().lower().replace(" ", "-")
+    raw["name"] = os.environ.get("RADAR_THEME_LABEL") or config.THEME_LABELS.get(key, name)
     return raw
 
 
