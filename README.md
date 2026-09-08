@@ -101,12 +101,18 @@ Four panels, in the order a desk needs them.
 2. **Trailing** — searches that were trending and have dropped off in the last
    90 minutes, with what they peaked at. A story that has stopped rising is as
    useful to know as one that has started.
-3. **Reading** — what people are reading, as opposed to searching: Telugu
+3. **Top stories** — Google News' current ranking for **Andhra Pradesh,
+   Vijayawada and Visakhapatnam**, English and Telugu interleaved in Google's
+   own order, newest first, nothing older than two hours. Fetched with no
+   account and no cookies, so it is what Google shows a stranger, not what it
+   shows you. (Google's own city "sections" were tried and dropped: they ran
+   12 to 60 hours stale.)
+4. **Reading** — what people are reading, as opposed to searching: Telugu
    Wikipedia's most-viewed pages. The pageview data is daily, so the list is
    *yesterday* and says so. Each page is marked `✓ on board` when a story on
    the board matches it. (Times of India's most-read lists were tried and
    dropped: national, and never about AP.)
-4. **Story board** — everything published in the last two hours, scored, with
+5. **Story board** — everything published in the last two hours, scored, with
    direction arrows (`▲ +15`), outlet counts (`+2` when more newsrooms picked it
    up), and `GN #3` when Google's own front page ranks it.
 
@@ -142,7 +148,7 @@ alert age limit, the acceleration comparison — keys off that one number.
 | Breaking coverage | Google News RSS, 30 standing queries in Telugu and English, all `when:2h` | free, keyless | 5 min |
 | District sweeps | 18 more Google News queries, a third each tick | free, keyless | every district every 15 min |
 | Coverage of what's rising | Google News searched for each rising trend | free, keyless | 5 min |
-| City sections | Google News geo feeds for Visakhapatnam, Amaravati, Vijayawada | free, keyless | 15 min |
+| Top stories by place | Google News search for Andhra Pradesh, Vijayawada, Visakhapatnam, both languages, `when:2h` | free, keyless | 5 min |
 | AP newspapers | 17 publisher RSS feeds (below) | free | 15 min |
 | What Telugu readers looked up | Telugu Wikipedia most-viewed pages (daily data) | free, keyless | hourly |
 | Chatter | Reddit r/andhrapradesh (marked ◆ social) | free, keyless | 15 min |

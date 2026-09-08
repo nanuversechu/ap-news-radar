@@ -102,6 +102,22 @@ __THEME_VARS__
   .chip:hover{background:var(--sel); color:var(--text)}
   .chip b{color:var(--text); font-weight:500}
 
+  /* ---- top stories by place ---- */
+  .cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:0;
+    border-top:1px solid var(--line); border-left:1px solid var(--line)}
+  .col{border-right:1px solid var(--line); border-bottom:1px solid var(--line); min-width:0}
+  .colhead{padding:5px 11px; font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--text); font-weight:700; border-bottom:1px solid var(--line); display:flex; gap:8px}
+  .colhead i{font-style:normal; color:var(--muted); font-weight:400; letter-spacing:0; text-transform:none; margin-left:auto}
+  .st{display:grid; grid-template-columns:4ch 1fr; gap:0 10px; padding:4px 11px; text-decoration:none;
+    border-bottom:1px solid var(--line); align-items:baseline}
+  .st:last-child{border-bottom:none}
+  .st:hover{background:var(--sel)}
+  .st .a{color:var(--muted); font-size:11.5px; text-align:right; font-variant-numeric:tabular-nums}
+  .st .h{font-size:13px; line-height:1.45; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical}
+  .st .o{color:var(--muted); font-size:11.5px}
+  .st.new .a{color:var(--up)}
+
   /* ---- reading rows ---- */
   .rd{display:grid; grid-template-columns:7ch 1fr auto; gap:0 12px; align-items:baseline;
     padding:4px 11px; border:1px solid var(--line); border-top:none; text-decoration:none}
@@ -190,6 +206,10 @@ __THEME_VARS__
     <span class="rule"></span><span class="n" id="n-trail"></span></div>
   <div class="chips" id="trailing"></div>
 
+  <div class="sec"><b>Top stories</b><span class="note">Google News · state and cities · no account, no cookies · last 2h</span>
+    <span class="rule"></span><span class="n" id="n-sec"></span></div>
+  <div class="cols" id="sections"></div>
+
   <div class="sec"><b>Reading</b><span class="note">Telugu Wikipedia · most-viewed pages yesterday</span>
     <span class="rule"></span><span class="n" id="n-rd"></span></div>
   <div id="reading"></div>
@@ -253,6 +273,20 @@ function trailChip(t){
   const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
   return `<a class="chip" href="${url}" target="_blank" rel="noopener" title="peaked ${fmtK(t.peak_traffic)} · lasted ${t.lasted_min}m">
     <span class="ar down">▼</span> <b>${esc(t.query)}</b> · ${fmtK(t.peak_traffic)} · gone ${ago(t.gone_min)}</a>`;
+}
+
+function sectionCols(list){
+  const order=['Andhra Pradesh','Vijayawada','Visakhapatnam'];
+  const by={}; for(const r of list){ (by[r.section]=by[r.section]||[]).push(r); }
+  return order.filter(k=>by[k]||true).map(k=>{
+    const rows=(by[k]||[]).slice(0,10);
+    const body = rows.length ? rows.map(r=>`<a class="st ${r.age_min<=30?'new':''}" href="${esc(r.url)}" target="_blank" rel="noopener"
+        title="#${r.rank} in Google's ranking · ${esc(r.outlet)}">
+        <span class="a">${ago(r.age_min)}</span>
+        <span><span class="h">${esc(r.title)}</span><span class="o">${esc(r.outlet)}</span></span></a>`).join('')
+      : `<div class="empty" style="border:none">nothing new in the last 2 hours</div>`;
+    return `<div class="col"><div class="colhead">${esc(k)}<i>${rows.length?rows.length+' in 2h':''}</i></div>${body}</div>`;
+  }).join('');
 }
 
 function readingRows(list){
@@ -387,6 +421,9 @@ function render(){
   const trl=DATA.trailing||[];
   document.getElementById('trailing').innerHTML = trl.length ? trl.map(trailChip).join('') : '<div class="empty" style="border:none">nothing has dropped off in the last 90 minutes</div>';
   document.getElementById('n-trail').textContent = trl.length? trl.length+'' : '';
+  const sec=DATA.sections||[];
+  document.getElementById('sections').innerHTML = sectionCols(sec);
+  document.getElementById('n-sec').textContent = sec.length ? `${sec.filter(r=>r.age_min<=30).length} in the last 30 min` : '';
   const rd=DATA.reading||[];
   document.getElementById('reading').innerHTML = rd.length ? readingRows(rd) : '<div class="empty">no reading data yet — Wikipedia loads on the hourly tick</div>';
   document.getElementById('n-rd').textContent = rd.length ? `${rd.filter(r=>r.covered).length} of ${rd.length} on the board` : '';

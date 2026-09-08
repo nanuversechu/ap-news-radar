@@ -160,6 +160,15 @@ store.record_source("X", "http://x", "news", True, count=5, ms=100)
 h = {r["name"]: r for r in store.source_health()}["X"]
 check(h["failures"] == 0, "a success resets the consecutive count")
 
+# --- top-story sections: interleave languages, keep Google's order, drop dupes --
+en=[{"title":"Naidu opens Bhogapuram terminal","published":now},{"title":"Vizag rains","published":now},{"title":"Third en","published":now}]
+te=[{"title":"భోగాపురం టెర్మినల్ ప్రారంభం","published":now},{"title":"Vizag rains","published":now}]
+merged=collect.merge_section([en,te])
+check([m["title"] for m in merged]==["Naidu opens Bhogapuram terminal","భోగాపురం టెర్మినల్ ప్రారంభం","Vizag rains","Third en"],
+      "sections interleave en/te by rank and drop the duplicate headline")
+check([m["rank"] for m in merged]==[1,2,3,4], "merged ranks are contiguous")
+check(collect.merge_section([])==[] and collect.merge_section([[]])==[], "empty feeds merge to nothing")
+
 # --- housekeeping retires only sources that have gone quiet for two days -------
 store.record_source("Fresh", "http://f", "news", True, count=1)
 store.record_source("NeverFailed", "http://n", "news", True, count=1)
@@ -171,6 +180,6 @@ names = {r["name"] for r in store.source_health()}
 check("Fresh" in names and "NeverFailed" in names, "recent sources survive housekeeping (even with a NULL last_fail)")
 check("Retired" not in names, "a source untouched for three days is retired")
 
-total = 55
+total = 58
 print(f"{total - failures}/{total} passed")
 sys.exit(1 if failures else 0)

@@ -86,6 +86,18 @@ CREATE TABLE IF NOT EXISTS source_health (
     last_fresh TEXT                 -- when this source last produced a fresh item
 );
 
+CREATE TABLE IF NOT EXISTS sections (
+    section      TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    url          TEXT,
+    outlet       TEXT,
+    lang         TEXT,
+    published_at TEXT,
+    rank         INTEGER,
+    ts           TEXT NOT NULL,
+    PRIMARY KEY (section, title)
+);
+
 CREATE TABLE IF NOT EXISTS reading (
     source  TEXT NOT NULL,
     title   TEXT NOT NULL,
@@ -244,6 +256,7 @@ def housekeeping() -> None:
     )
     c.execute("DELETE FROM trends WHERE last_seen < ?", (cutoff,))
     c.execute("DELETE FROM reading WHERE ts < ?", (hist_cutoff,))
+    c.execute("DELETE FROM sections WHERE ts < ?", (hist_cutoff,))
     # A source that has been removed from config stops being written to; after
     # two days without a poll its row is retired so the strip stays truthful.
     # SQLite's scalar MAX() returns NULL if any argument is NULL, which would

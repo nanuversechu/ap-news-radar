@@ -91,8 +91,6 @@ _EN = ("en-IN", "IN:en")
 
 STANDING_QUERIES: list[tuple[str, tuple[str, str], str]] = [
     # Broad state sweeps
-    ("Andhra Pradesh", _EN, "2h"),
-    ("ఆంధ్రప్రదేశ్", _TE, "2h"),
     ("ఆంధ్ర ప్రదేశ్ వార్తలు", _TE, "2h"),
     ("AP news", _EN, "2h"),
     ("Amaravati", _EN, "2h"),
@@ -115,9 +113,6 @@ STANDING_QUERIES: list[tuple[str, tuple[str, str], str]] = [
     ("cyclone Bay of Bengal Andhra", _EN, "2h"),
     # Infrastructure / money
     ("Polavaram project", _EN, "2h"),
-    ("Visakhapatnam", _EN, "2h"),
-    ("విశాఖపట్నం", _TE, "2h"),
-    ("Vijayawada", _EN, "2h"),
     # Exams / jobs — huge search volume in AP
     ("AP results APPSC EAPCET", _EN, "2h"),
     ("ఏపీ ఫలితాలు", _TE, "2h"),
@@ -144,14 +139,20 @@ DISTRICT_QUERIES: list[tuple[str, tuple[str, str], str]] = [
 ]
 DISTRICT_ROTATION = 3
 
-# Google News "geo" sections. Only these three AP places return anything; the
-# other twelve districts answer with an empty feed. They ignore `when:`, so the
-# ingest gate does the freshness work.
-GEO_FEEDS: list[tuple[str, str]] = [
-    ("Google News · Visakhapatnam", "https://news.google.com/rss/headlines/section/geo/Visakhapatnam?hl=en-IN&gl=IN&ceid=IN:en"),
-    ("Google News · Amaravati", "https://news.google.com/rss/headlines/section/geo/Amaravati?hl=en-IN&gl=IN&ceid=IN:en"),
-    ("Google News · Vijayawada", "https://news.google.com/rss/headlines/section/geo/Vijayawada?hl=en-IN&gl=IN&ceid=IN:en"),
+# Google News "top stories" for the state and its two big cities.
+#
+# Google's own geo sections (/headlines/section/geo/<place>) were tried and
+# dropped: on 8 Sep 2026 they carried 12- to 60-hour-old items and nothing
+# inside the freshness window, in either language. A search with `when:2h`
+# returns what Google ranks for the place *right now*, in both languages, and
+# that is what these panels show. Fetched without an account or cookies, so it
+# is what Google shows a stranger, not what it shows you.
+TOP_SECTIONS: list[tuple[str, list[tuple[str, tuple[str, str], str]]]] = [
+    ("Andhra Pradesh", [("Andhra Pradesh", _EN, "2h"), ("ఆంధ్రప్రదేశ్", _TE, "2h")]),
+    ("Vijayawada",     [("Vijayawada", _EN, "2h"), ("విజయవాడ", _TE, "2h")]),
+    ("Visakhapatnam",  [("Visakhapatnam", _EN, "2h"), ("విశాఖపట్నం", _TE, "2h"), ("విశాఖ", _TE, "2h")]),
 ]
+SECTION_ROWS = 10
 
 # Google News front page and sections, per language. Rank within the top
 # stories feed is Google's own reading-behaviour signal and is kept.

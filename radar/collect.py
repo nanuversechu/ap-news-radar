@@ -432,8 +432,71 @@ def collect_publishers() -> list[dict]:
     return _collect_feeds([(n, u) for n, _l, u in config.PUBLISHER_FEEDS], "news", 40)
 
 
-def collect_geo() -> list[dict]:
-    return _collect_feeds(config.GEO_FEEDS, "news", 40)
+def merge_section(feeds_items: list[list[dict]]) -> list[dict]:
+    """Interleave several ranked feeds (English, Telugu) into one ranked list.
+
+    Position k of every feed comes before position k+1 of any, so Google's
+    ordering survives and neither language crowds the other out. Duplicate
+    headlines keep their first appearance.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    longest = max((len(f) for f in feeds_items), default=0)
+    for k in range(longest):
+        for f in feeds_items:
+            if k < len(f):
+                key = lexicon.normalise(f[k]["title"])
+                if key and key not in seen:
+                    seen.add(key)
+                    out.append({**f[k], "rank": len(out) + 1})
+    return out
+
+
+def collect_sections() -> list[dict]:
+    """Google's current ranking for the state and its cities, both languages.
+
+    Writes the `sections` table for the panel and returns the items for the
+    board. Only items inside the freshness window are kept, so the panel can
+    never show yesterday.
+    """
+    c = store.conn()
+    now = store.now_iso()
+    all_items: list[dict] = []
+    for section, queries in config.TOP_SECTIONS:
+        url_map = {feeds.google_news_url(q, hl, ceid, when): q for q, (hl, ceid), when in queries}
+        responses = net.fetch_all_results(list(url_map))
+        per_feed: list[list[dict]] = []
+        answered = 0
+        for url in url_map:
+            res = responses.get(url)
+            if not res or not res.body:
+                continue
+            answered += 1
+            batch = []
+            for item in feeds.parse_items(res.body):
+                headline, outlet = feeds.split_google_title(item["title"])
+                if headline and is_fresh(item["published"]):
+                    batch.append({"title": headline, "url": item["link"],
+                                  "outlet": outlet or item.get("source") or "",
+                                  "published": item["published"], "kind": "news"})
+            per_feed.append(batch)
+        merged = merge_section(per_feed)
+        summary = net.Result("https://news.google.com/rss/search", "" if answered else None,
+                             200 if answered else 0, 0, "" if answered else "no feed answered")
+        _record(f"Google News · top · {section}", summary.url, "news", summary,
+                sum(len(b) for b in per_feed), fresh=len(merged))
+        if answered:
+            c.execute("DELETE FROM sections WHERE section=?", (section,))
+            for it in merged[: config.SECTION_ROWS * 3]:
+                c.execute(
+                    "INSERT OR REPLACE INTO sections(section, title, url, outlet, lang, "
+                    "published_at, rank, ts) VALUES (?,?,?,?,?,?,?,?)",
+                    (section, it["title"], it["url"], it["outlet"],
+                     "te" if lexicon.is_telugu(it["title"]) else "en",
+                     it["published"].isoformat(), it["rank"], now),
+                )
+        all_items += merged
+    return all_items
 
 
 def collect_social() -> list[dict]:

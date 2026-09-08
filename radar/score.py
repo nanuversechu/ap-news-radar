@@ -297,6 +297,26 @@ def reading_view(scored: list[dict]) -> list[dict]:
     return out
 
 
+def sections_view() -> list[dict]:
+    """The top-stories panels: newest first, nothing outside the window."""
+    rows = store.conn().execute(
+        "SELECT section, title, url, outlet, lang, published_at, rank FROM sections "
+        "ORDER BY section, published_at DESC",
+    ).fetchall()
+    limit = config.MAX_ITEM_AGE_HOURS * 60
+    out: list[dict] = []
+    for r in rows:
+        age = item_age({"published_at": r["published_at"], "first_seen": None})
+        if age > limit:
+            continue
+        out.append({
+            "section": r["section"], "title": r["title"], "url": r["url"],
+            "outlet": r["outlet"], "lang": r["lang"], "rank": r["rank"],
+            "age_min": round(age),
+        })
+    return out
+
+
 def gaps(trends: list[dict], scored: list[dict]) -> list[dict]:
     """Kept for callers that only want the commissioning list."""
     return trend_coverage(trends, scored)

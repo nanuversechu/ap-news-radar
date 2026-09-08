@@ -65,8 +65,12 @@ def _check() -> None:
     for q, (hl, ceid), when in config.STANDING_QUERIES[:3] + config.DISTRICT_QUERIES[:2]:
         probe(f"{q} when:{when}", feeds.google_news_url(q, hl, ceid, when))
     print("Google News front page and sections")
-    for name, url in config.GOOGLE_NEWS_TOP + config.GOOGLE_NEWS_TOPICS + config.GEO_FEEDS:
+    for name, url in config.GOOGLE_NEWS_TOP + config.GOOGLE_NEWS_TOPICS:
         probe(name, url)
+    print("Google News top stories by place")
+    for section, queries in config.TOP_SECTIONS:
+        for q, (hl, ceid), when in queries:
+            probe(f"{section}: {q} when:{when}", feeds.google_news_url(q, hl, ceid, when))
     print("Reading signals")
     from datetime import datetime, timedelta, timezone
     y = datetime.now(timezone.utc) - timedelta(days=1)

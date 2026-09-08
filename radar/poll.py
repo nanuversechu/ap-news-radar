@@ -33,6 +33,7 @@ _state: dict = {
     "board": [],
     "gaps": [],
     "reading": [],
+    "sections": [],
     "sources": [],
     "cooldowns": {},
     "degraded": [],
@@ -70,7 +71,7 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     slow = (tick % config.SLOW_EVERY_N_TICKS) == 0
     hourly = (tick % config.HOURLY_EVERY_N_TICKS) == 0
     stats = {"trends": 0, "new_items": 0, "google_news": 0, "top": 0, "topics": 0,
-             "districts": 0, "publishers": 0, "geo": 0, "social": 0, "youtube": 0,
+             "districts": 0, "publishers": 0, "sections": 0, "social": 0, "youtube": 0,
              "chased": 0, "reading": 0}
     degraded: list[str] = []
 
@@ -94,6 +95,10 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     stats["top"] = len(top)
     items += top
 
+    sec = collect.collect_sections()
+    stats["sections"] = len(sec)
+    items += sec
+
     dq = collect.collect_google_news(collect.district_queries(tick), "Google News · districts")
     stats["districts"] = len(dq)
     items += dq
@@ -109,9 +114,6 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
         pub = collect.collect_publishers()
         stats["publishers"] = len(pub)
         items += pub
-        geo = collect.collect_geo()
-        stats["geo"] = len(geo)
-        items += geo
         soc = collect.collect_social()
         stats["social"] = len(soc)
         items += soc
@@ -129,6 +131,7 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
     gap_list = score.trend_coverage(trends, board)   # annotates trends in place
     trailing = collect.trailing_trends(trends)
     reading = score.reading_view(board)
+    sections = score.sections_view()
 
     # The very first run has no history to accelerate against, so every story
     # looks like a breakout. Fill the baseline quietly and start alerting from
@@ -162,6 +165,7 @@ def run_tick(tick: int = 0, *, verbose: bool = True) -> dict:
             degraded.append("board")
         _state["gaps"] = gap_list
         _state["reading"] = reading
+        _state["sections"] = sections
         _state["sources"] = sources
         _state["cooldowns"] = net.cooldowns()
         _state["degraded"] = degraded
