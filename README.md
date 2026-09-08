@@ -146,10 +146,10 @@ Every item is grouped into a **story cluster**, then each cluster is scored:
 
 ```
 score = 100 × locality × ( 0.34 trend        does a live Google search match this?
-                         + 0.22 acceleration reports in the last hour vs the three before
+                         + 0.22 acceleration reports in the last 30 min vs the 90 before
                          + 0.20 corroboration how many independent outlets have it
                          + 0.14 velocity     raw reports per hour
-                         + 0.10 freshness    decays with a 2½ hour half-life )
+                         + 0.10 freshness    decays with a 40 minute half-life )
 ```
 
 `locality` is `1.0` when the story names an AP place, politician or
@@ -157,9 +157,13 @@ institution, `0.55` for the wider Telugu sphere, `0.18` otherwise. This is what
 keeps a Caribbean Premier League scorecard off an Andhra Pradesh board.
 
 **Alerts** fire at score ≥ 62, but only when at least **two independent
-outlets** have the story and it is under three hours old — the single best
+outlets** have the story and it is under 100 minutes old — the single best
 filter against a bot spike or a coordinated film promotion. Same story will not
 re-alert for 90 minutes.
+
+One honest consequence of the two-hour window: single-outlet stories rank
+higher than they used to, because there simply is not time for corroboration to
+build. Alerts still require two outlets, so they will not fire on one report.
 
 ### The bit that earns its keep
 
