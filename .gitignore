@@ -11,3 +11,6 @@ __pycache__/
 *.xml
 *.html
 !radar/**/*.html
+
+# The published snapshot is source, not scratch
+!docs/index.html

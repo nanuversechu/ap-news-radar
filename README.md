@@ -7,9 +7,20 @@ write to demand instead of guessing at it.
 Built for a desk, not a data scientist. No API keys, no accounts, no
 `pip install` — Python's standard library and nothing else.
 
+## See it without installing anything
+
+**<https://nanuversechu.github.io/ap-news-radar/>** — a frozen copy of the
+live dashboard, exactly as the desk sees it, with the data of the moment it
+was taken. Nothing moves on it; every link opens the real article. The time it
+was taken is in the top bar. To refresh it, on the desk machine:
+
+```bash
+python3 -m radar snapshot && git add docs && git commit -m "snapshot" && git push
+```
+
 ## Bookmark this
 
-**<http://127.0.0.1:8787>**
+**<http://127.0.0.1:8787>** — the live one, on the desk machine.
 
 It runs as a background service that starts on boot and restarts itself if it
 ever crashes, so the link should simply always work. Nothing to launch.

@@ -1,12 +1,14 @@
 """Entry point.
 
-    python -m radar          poll continuously and serve the dashboard
-    python -m radar once     run a single tick and print the top stories
-    python -m radar check    verify every configured source is alive
+    python -m radar           poll continuously and serve the dashboard
+    python -m radar once      run a single tick and print the top stories
+    python -m radar check     verify every configured source is alive
+    python -m radar snapshot  freeze the live dashboard into docs/index.html
 """
 
 from __future__ import annotations
 
+import os
 import sys
 
 from . import config, poll, server, store
@@ -96,6 +98,63 @@ def _check() -> None:
     print(f"  {t['source']:4}       {t['name']} ({t['mode']})")
 
 
+def _snapshot() -> None:
+    """Freeze the running dashboard into a single self-contained HTML file.
+
+    For showing the tool to someone who will not run it: the page renders
+    exactly as the desk sees it, with the data of this moment embedded, no
+    server, no polling. Written to docs/index.html so GitHub Pages can host it.
+    """
+    import json
+    import urllib.request
+    from datetime import datetime, timedelta, timezone
+
+    from . import server, theme
+
+    base = f"http://{config.SERVER_HOST}:{config.SERVER_PORT}"
+    try:
+        with urllib.request.urlopen(base + "/api/board", timeout=30) as r:
+            board = json.load(r)
+        with urllib.request.urlopen(base + "/api/theme", timeout=30) as r:
+            th = json.load(r)
+    except Exception as e:
+        print(f"the radar is not answering on {base}: {e}")
+        sys.exit(1)
+    if not board.get("last_tick"):
+        print("the radar has not completed a tick yet; try again in a minute")
+        sys.exit(1)
+
+    ist = datetime.now(timezone(timedelta(hours=5, minutes=30)))
+    taken = ist.strftime("%H:%M IST, %-d %B %Y")
+
+    def embed(obj) -> str:  # a </script> inside a headline must not end the script
+        return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
+
+    page = server.PAGE.replace("__THEME_VARS__", theme.css_vars())
+    start = page.index("async function tick(){")
+    end = page.index("tick(); setInterval(tick, 30000);") + len("tick(); setInterval(tick, 30000);")
+    static = f"""const SNAPSHOT_TAKEN={json.dumps(taken)};
+DATA={embed(board)};
+applyTheme({embed(th)});
+render();
+clearInterval(countdownTimer);
+document.getElementById('s-live').className='seg';
+document.getElementById('s-live').textContent='snapshot';
+document.getElementById('s-next').textContent='taken '+SNAPSHOT_TAKEN;
+document.getElementById('notices').innerHTML=
+  '<div class="notice">This is a frozen copy of the live dashboard, taken '+SNAPSHOT_TAKEN+
+  '. On the desk it refreshes itself every five minutes; here nothing moves. Every link opens the real article.</div>';"""
+    page = page[:start] + static + page[end:]
+
+    out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "docs")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "index.html")
+    with open(out, "w", encoding="utf-8") as fh:
+        fh.write(page)
+    open(os.path.join(out_dir, ".nojekyll"), "w").close()
+    print(f"wrote {out}  ({os.path.getsize(out) // 1024} KB, taken {taken})")
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "run"
-    {"run": _run, "once": _once, "check": _check}.get(cmd, _run)()
+    {"run": _run, "once": _once, "check": _check, "snapshot": _snapshot}.get(cmd, _run)()
