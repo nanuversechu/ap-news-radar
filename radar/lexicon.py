@@ -1,7 +1,7 @@
 """Bilingual entity matching and headline similarity.
 
 This is the piece that would normally be a 2 GB LaBSE model. On a CPU-only
-laptop that is a bad trade, so instead we lean on the fact that Andhra Pradesh
+laptop that is a bad trade, so instead we lean on the fact that a state's
 news revolves around a knowable cast: about sixty people, places, parties and
 recurring topics. Match those in either script and a Telugu headline and its
 English twin land on the same canonical signature.
@@ -32,26 +32,20 @@ for _key, (_kind, _forms) in config.LEXICON.items():
         _SURFACES.append((_form.lower(), _key, _kind))
 _SURFACES.sort(key=lambda t: len(t[0]), reverse=True)
 
-AP_PLACE_KEYS = {k for k, (kind, _) in config.LEXICON.items() if kind == "place"}
+LOCAL_PLACE_KEYS = {k for k, (kind, _) in config.LEXICON.items() if kind == "place"}
 TOPIC_KEYS = {k for k, (kind, _) in config.LEXICON.items() if kind == "topic"}
 # Named things. "cricket" or "cinema" identify a beat; "tirumala" identifies a
 # story, and only the latter can tie a search query to a headline.
 SPECIFIC_KEYS = {k for k in config.LEXICON if k not in TOPIC_KEYS}
 # Locality is derived from the lexicon so that adding a minister there is
-# enough. Only the exceptions are listed: people and bodies that are named in
-# AP news constantly without the story being about Andhra Pradesh.
-_NATIONAL = {"modi", "amit_shah", "kohli", "rohit", "bumrah",
-             "bjp", "congress", "imd", "cbi", "ed"}
-# Telugu-sphere but not Andhra Pradesh: Telangana politics, and film stars
-# whose stories are Telugu-reader interest rather than state news.
-NON_AP_KEYS = {"revanth", "kcr", "ktr", "brs",
-               "prabhas", "mahesh_babu", "ntr_jr", "ram_charan", "allu_arjun",
-               "chiranjeevi", "nagarjuna", "vijay_deverakonda", "rajamouli",
-               "samantha", "rashmika", "anushka", "nayanthara"}
-AP_PERSON_KEYS = {k for k, (kind, _) in config.LEXICON.items()
-                  if kind == "person" and k not in _NATIONAL | NON_AP_KEYS}
-AP_ORG_KEYS = {k for k, (kind, _) in config.LEXICON.items()
-               if kind == "org" and k not in _NATIONAL | NON_AP_KEYS}
+# enough; only the exceptions are listed, in config.
+NATIONAL_KEYS = config.NATIONAL_KEYS
+NEIGHBOUR_KEYS = config.NEIGHBOUR_KEYS
+_EXCEPT = NATIONAL_KEYS | NEIGHBOUR_KEYS
+LOCAL_PERSON_KEYS = {k for k, (kind, _) in config.LEXICON.items()
+                     if kind == "person" and k not in _EXCEPT}
+LOCAL_ORG_KEYS = {k for k, (kind, _) in config.LEXICON.items()
+                  if kind == "org" and k not in _EXCEPT}
 
 
 def is_telugu(text: str) -> bool:
@@ -146,17 +140,17 @@ def tokens(text: str) -> set[str]:
 
 
 def locality(keys: set[str]) -> tuple[float, str]:
-    """How Andhra Pradesh is this? Returns (multiplier, label).
+    """How local is this? Returns (multiplier, label).
 
     Only a named place, politician or institution counts. Topic words like
     "cricket" or "movie" are deliberately worthless here — otherwise a
     Caribbean Premier League scorecard reads as local news because it
     contains the word wicket.
     """
-    if keys & (AP_PLACE_KEYS | AP_PERSON_KEYS | AP_ORG_KEYS):
-        return config.LOCALITY_STRONG, "AP"
-    if keys & NON_AP_KEYS:
-        return config.LOCALITY_WEAK, "Telugu"
+    if keys & (LOCAL_PLACE_KEYS | LOCAL_PERSON_KEYS | LOCAL_ORG_KEYS):
+        return config.LOCALITY_STRONG, config.LOCAL_LABEL
+    if keys & NEIGHBOUR_KEYS:
+        return config.LOCALITY_WEAK, config.NEIGHBOUR_LABEL
     return config.LOCALITY_NONE, "wider"
 
 

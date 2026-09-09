@@ -9,6 +9,20 @@ from __future__ import annotations
 import os
 
 # --------------------------------------------------------------------------
+# Which state this radar watches.
+#
+# Everything region-specific lives in this file. The rest of the package is
+# byte-identical between the Andhra Pradesh and Telangana radars, so a fix in
+# one is a file copy away from the other.
+# --------------------------------------------------------------------------
+
+REGION_NAME = "Andhra Pradesh"
+REGION_SLUG = "ap-radar"
+LOCAL_LABEL = "AP"            # locality tag and the badge for the home state
+HOME_GEO = "IN-AP"
+GEO_BADGES = {"IN-AP": "AP", "IN-TG": "TG", "IN": "IN"}
+
+# --------------------------------------------------------------------------
 # Identity / politeness
 # --------------------------------------------------------------------------
 
@@ -50,6 +64,9 @@ THEME_LABELS = {
 # --------------------------------------------------------------------------
 
 TICK_SECONDS = int(os.environ.get("RADAR_TICK", "300"))  # 5 minutes
+# Wait this long before the first poll. Two radars on one machine are offset so
+# they do not fetch from Google in the same second.
+START_DELAY_SECONDS = int(os.environ.get("RADAR_START_DELAY", "0"))
 SLOW_EVERY_N_TICKS = 3    # publishers, sections, most-read: every 3rd tick (~15 min)
 HOURLY_EVERY_N_TICKS = 12  # Wikipedia top pages change once a day; once an hour is plenty
 
@@ -233,16 +250,13 @@ PUBLISHER_FEEDS: list[tuple[str, str, str]] = [
 # --------------------------------------------------------------------------
 # YouTube channel RSS.
 #
-# DISABLED 18 Aug 2026. youtube.com/feeds/videos.xml returned 200 with 15
-# entries per channel on 17 Aug and 404 for every channel the next morning —
-# including the playlist_id and legacy user= variants — while the channel
-# pages themselves still load. The endpoint, not these IDs, is the problem.
-#
-# `./run.sh check` probes it anyway, so you will see it if it comes back.
-# Flip this to True when it does.
+# The endpoint 404'd for every channel between 18 Aug and 9 Sep 2026, then
+# came back: on 9 Sep every channel below answered with 15 entries, the newest
+# minutes old. Re-enabled, with the freshness gate deciding what shows.
+# If it dies again, set this to False; `./run.sh check` keeps probing either way.
 # --------------------------------------------------------------------------
 
-YOUTUBE_ENABLED = False
+YOUTUBE_ENABLED = True
 
 YOUTUBE_CHANNELS: list[tuple[str, str]] = [
     ("TV9 Telugu", "UCfaww9Q8C_-EaM0sXI8o-fA"),
@@ -427,6 +441,17 @@ LEXICON: dict[str, tuple[str, list[str]]] = {
     "dasara": ("topic", ["dasara", "dussehra", "దసరా"]),
     "sankranti": ("topic", ["sankranti", "సంక్రాంతి"]),
 }
+
+# Named in local news constantly without the story being about this state.
+NATIONAL_KEYS = {"modi", "amit_shah", "kohli", "rohit", "bumrah",
+                 "bjp", "congress", "imd", "cbi", "ed"}
+# Telugu-sphere but not this state: the other state's politics, and film stars
+# whose stories are Telugu-reader interest rather than state news.
+NEIGHBOUR_KEYS = {"revanth", "kcr", "ktr", "brs",
+                  "prabhas", "mahesh_babu", "ntr_jr", "ram_charan", "allu_arjun",
+                  "chiranjeevi", "nagarjuna", "vijay_deverakonda", "rajamouli",
+                  "samantha", "rashmika", "anushka", "nayanthara"}
+NEIGHBOUR_LABEL = "Telugu"
 
 # Words too common to be worth clustering on.
 STOPWORDS = set("""

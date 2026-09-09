@@ -96,7 +96,7 @@ def ingest(items: list[dict]) -> tuple[int, int]:
 
 
 # --------------------------------------------------------------------------
-# Google Trends — what Andhra Pradesh is typing into Google right now
+# Google Trends — what the state is typing into Google right now
 # --------------------------------------------------------------------------
 
 def collect_trends() -> list[dict]:

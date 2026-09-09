@@ -264,6 +264,11 @@ def sleep_remaining(end_mono: float, end_wall: float) -> float:
 def loop(forever: bool = True) -> None:
     tick = 0
     watchdog.ready()
+    # When two radars share a machine they must not hammer Google in lockstep.
+    # READY is sent first, so systemd sees a healthy start either way.
+    if config.START_DELAY_SECONDS > 0:
+        watchdog.status(f"staggering start by {config.START_DELAY_SECONDS}s")
+        _sleep_with_heartbeat(config.START_DELAY_SECONDS)
     while True:
         started = time.monotonic()
         try:

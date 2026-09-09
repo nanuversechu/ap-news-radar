@@ -3,8 +3,8 @@
 The page takes its colours from the live Omarchy theme (see theme.py) and
 re-reads them every refresh, so `omarchy theme set` restyles it in seconds.
 
-It is organised around one question: what are people in Andhra Pradesh
-searching for and reading right now, and is it covered. Every search shows
+It is organised around one question: what are people in this state searching
+for and reading right now, and is it covered. Every search shows
 its own coverage; clicking one narrows the board to the stories that answer it.
 """
 
@@ -19,7 +19,7 @@ PAGE = r"""<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ap-radar</title>
+<title>__SLUG__</title>
 <style>
   :root{
 __THEME_VARS__
@@ -186,7 +186,7 @@ __THEME_VARS__
 </style></head><body>
 
 <div class="bar">
-  <span class="seg name">ap-radar</span>
+  <span class="seg name">__SLUG__</span>
   <span class="seg" id="s-live"><span class="dot live"></span>live</span>
   <span class="seg dim" id="s-upd">connecting…</span>
   <span class="seg dim hide-sm" id="s-next"></span>
@@ -210,16 +210,13 @@ __THEME_VARS__
     <span class="rule"></span><span class="n" id="n-sec"></span></div>
   <div class="cols" id="sections"></div>
 
-  <div class="sec"><b>Reading</b><span class="note">Telugu Wikipedia · most-viewed pages yesterday</span>
-    <span class="rule"></span><span class="n" id="n-rd"></span></div>
-  <div id="reading"></div>
 
   <div class="sec"><b>Story board</b><span class="note">everything published in the last 2 hours, scored</span>
     <span class="rule"></span><span class="n" id="n-board"></span></div>
   <div class="tools">
     <div class="tabs" id="filters">
       <button data-f="all" class="on">all</button>
-      <button data-f="ap">ap only</button>
+      <button data-f="ap">__LOCAL_LOWER__ only</button>
       <button data-f="fresh">&lt;30m</button>
       <button data-f="trend">search-backed</button>
       <button data-f="moving">moving</button>
@@ -228,10 +225,15 @@ __THEME_VARS__
     <input class="search" id="q" placeholder="/ filter…" autocomplete="off" spellcheck="false">
   </div>
   <div id="board"></div>
+
+  <div class="sec"><b>Reading</b><span class="note">Telugu Wikipedia · most-viewed pages yesterday</span>
+    <span class="rule"></span><span class="n" id="n-rd"></span></div>
+  <div id="reading"></div>
   <div class="keys"><kbd>/</kbd>filter <kbd>j</kbd><kbd>k</kbd>move <kbd>o</kbd>open <kbd>1</kbd>–<kbd>5</kbd>tabs <kbd>s</kbd>sources <kbd>esc</kbd>clear</div>
 </div>
 
 <script>
+const REGION=__REGION_JS__;
 let FILTER='all', Q='', DATA=null, CUR=-1, TREND=null;   // TREND = {query, ids:Set}
 
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -254,19 +256,19 @@ function applyTheme(t){
 
 function trendCell(t,i){
   const d=t.direction||'flat';
-  const geo = t.geo==='IN-AP'?'AP' : t.geo==='IN-TG'?'TG' : 'IN';
+  const geo = REGION.badges[t.geo] || t.geo;
   const n=t.coverage_outlets||0;
   const cov = n===0 ? '<span class="cov none">uncovered</span>'
             : n===1 ? '<span class="cov none">1 outlet</span>'
             : `<span class="cov">${n} outlets</span>`;
   const title=`${t.geo_label} · rising ${Math.round((t.rising||0)*100)}%`+(t.delta?` · ${t.delta}`:'')
-    +(t.local?' · names an AP place or person':'')+'\nclick to show the stories that answer this';
+    +(t.local?' · names a '+REGION.local+' place or person':'')+'\nclick to show the stories that answer this';
   const url='https://trends.google.com/trends/explore?q='+encodeURIComponent(t.query)+'&geo='+t.geo+'&date=now%201-d';
   const on = TREND && TREND.query===t.query ? 'on' : '';
   return `<div class="cell ${on}" data-i="${i}" title="${esc(title)}">
     <a class="ext" href="${url}" target="_blank" rel="noopener" title="open in Google Trends">↗</a>
     <div class="q">${arrow(d)} ${esc(t.query)}${t.local?' <span class="ap">AP</span>':''}</div>
-    <div class="m"><span>${fmtK(t.traffic)}${geo!=='AP'?' <span style="opacity:.7">'+geo+'</span>':''}</span>${cov}</div></div>`;
+    <div class="m"><span>${fmtK(t.traffic)}${geo!==REGION.local?' <span style="opacity:.7">'+geo+'</span>':''}</span>${cov}</div></div>`;
 }
 
 function trailChip(t){
@@ -276,7 +278,7 @@ function trailChip(t){
 }
 
 function sectionCols(list){
-  const order=['Andhra Pradesh','Vijayawada','Visakhapatnam'];
+  const order=REGION.sections;
   const by={}; for(const r of list){ (by[r.section]=by[r.section]||[]).push(r); }
   return order.filter(k=>by[k]||true).map(k=>{
     const rows=(by[k]||[]).slice(0,10);
@@ -338,7 +340,7 @@ function row(c,i){
       ${gloss}
       <div class="meta"><span class="bar-t t-${t}">${bar(c.score/100,10)}</span>
         &nbsp; <span class="k">${c.outlet_count}</span> outlet${c.outlet_count===1?'':'s'}${outl}
-        · ${ago(c.age_min)} · ${langs}${c.locality!=='AP'?' · '+esc(c.locality):''}</div>
+        · ${ago(c.age_min)} · ${langs}${c.locality!==REGION.local?' · '+esc(c.locality):''}</div>
       ${why}
       ${links?`<details><summary>+ ${c.item_count} reports</summary><div class="links">${links}</div></details>`:''}
     </div></article>`;
@@ -347,7 +349,7 @@ function row(c,i){
 const keep = c => {
   if(TREND && !TREND.ids.has(c.id)) return false;
   if(!TREND && c.extra) return false;   // below the top 60: only shown for a search
-  if(FILTER==='ap' && c.locality!=='AP') return false;
+  if(FILTER==='ap' && c.locality!==REGION.local) return false;
   if(FILTER==='fresh' && c.age_min>30) return false;
   if(FILTER==='trend' && !c.trend_query) return false;
   if(FILTER==='moving' && !['up','new'].includes(c.direction)) return false;
@@ -474,6 +476,22 @@ tick(); setInterval(tick, 30000);
 """
 
 
+def render_page() -> str:
+    """The dashboard with this region's identity and the live theme baked in."""
+    region = {
+        "slug": config.REGION_SLUG,
+        "name": config.REGION_NAME,
+        "local": config.LOCAL_LABEL,
+        "badges": config.GEO_BADGES,
+        "sections": [name for name, _ in config.TOP_SECTIONS],
+    }
+    return (PAGE
+            .replace("__THEME_VARS__", theme.css_vars())
+            .replace("__REGION_JS__", json.dumps(region, ensure_ascii=False))
+            .replace("__LOCAL_LOWER__", config.LOCAL_LABEL.lower())
+            .replace("__SLUG__", config.REGION_SLUG))
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "APRadar/1.2"
 
@@ -496,7 +514,7 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         try:
             if path == "/":
-                page = PAGE.replace("__THEME_VARS__", theme.css_vars())
+                page = render_page()
                 self._send(page.encode("utf-8"), "text/html; charset=utf-8")
             elif path == "/api/board":
                 self._json(poll.snapshot())

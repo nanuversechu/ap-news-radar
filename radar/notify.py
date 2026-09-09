@@ -96,7 +96,8 @@ def google_search_link(query: str) -> str:
     return "https://www.google.com/search?" + urllib.parse.urlencode({"q": query, "gl": "IN"})
 
 
-def trends_explore_link(query: str, geo: str = "IN-AP") -> str:
+def trends_explore_link(query: str, geo: str = "") -> str:
+    geo = geo or config.HOME_GEO
     return "https://trends.google.com/trends/explore?" + urllib.parse.urlencode(
         {"q": query, "geo": geo, "date": "now 1-d"}
     )

@@ -16,7 +16,7 @@ from . import config, poll, server, store
 
 def _run() -> None:
     store.init()
-    print("AP news radar")
+    print(f"{config.REGION_NAME} news radar")
     print(f"  database   {config.DB_PATH}")
     print(f"  tick       every {config.TICK_SECONDS // 60} min")
     alerts = "telegram" if config.TELEGRAM_TOKEN else "console only"
@@ -34,7 +34,7 @@ def _once() -> None:
     store.init()
     poll.run_tick(0)
     state = poll.snapshot()
-    print("\nTop searches in AP right now")
+    print(f"\nTop searches in {config.REGION_NAME} right now")
     for t in state["trends"][:10]:
         print(f"  {t['rising']:.2f}  {t['query']}  ({t['traffic']}+, {t['geo_label']})")
     print("\nTop stories")
@@ -54,8 +54,12 @@ def _check() -> None:
     def probe(label: str, url: str, parser=feeds.parse_items) -> int:
         res = net.fetch_result(url, retries=1)
         count = len(parser(res.body)) if res.body else 0
-        mark = "ok  " if count else "DEAD"
-        why = "" if count else f"  ({res.error or 'HTTP ' + str(res.status)})"
+        # A search that answers with nothing is quiet, not broken: a place can
+        # simply have had no news in the window.
+        mark = "ok  " if count else ("none" if res.ok else "DEAD")
+        why = "" if count else (
+            "  (nothing in this window)" if res.ok
+            else f"  ({res.error or 'HTTP ' + str(res.status)})")
         print(f"  {mark} {count:>4}  {res.ms:>5}ms  {label}{why}")
         return count
 
@@ -109,7 +113,7 @@ def _snapshot() -> None:
     import urllib.request
     from datetime import datetime, timedelta, timezone
 
-    from . import server, theme
+    from . import server
 
     base = f"http://{config.SERVER_HOST}:{config.SERVER_PORT}"
     try:
@@ -130,7 +134,7 @@ def _snapshot() -> None:
     def embed(obj) -> str:  # a </script> inside a headline must not end the script
         return json.dumps(obj, ensure_ascii=False).replace("</", "<\\/")
 
-    page = server.PAGE.replace("__THEME_VARS__", theme.css_vars())
+    page = server.render_page()
     start = page.index("async function tick(){")
     end = page.index("tick(); setInterval(tick, 30000);") + len("tick(); setInterval(tick, 30000);")
     static = f"""const SNAPSHOT_TAKEN={json.dumps(taken)};

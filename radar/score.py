@@ -249,7 +249,7 @@ def trend_coverage(trends: list[dict], scored: list[dict]) -> list[dict]:
         t["coverage_outlets"] = len(outlets)
         t["coverage_ids"] = ids[:20]
         t["coverage_best"] = round(best, 1)
-        t["local"] = lexicon.locality(set(t.get("entities") or set()))[1] == "AP"
+        t["local"] = lexicon.locality(set(t.get("entities") or set()))[1] == config.LOCAL_LABEL
 
         if t["rising"] < 0.30 or t["geo"] == "IN":
             continue
@@ -271,7 +271,7 @@ def reading_view(scored: list[dict]) -> list[dict]:
     """What people are reading, each item marked local / covered.
 
     `covered` means a story on the board matches it; `local` means the lexicon
-    finds an Andhra Pradesh place, person or institution in it.
+    finds a place, person or institution from this state in it.
     """
     since = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat()
     rows = store.conn().execute(
@@ -290,7 +290,7 @@ def reading_view(scored: list[dict]) -> list[dict]:
         out.append({
             "source": r["source"], "title": r["title"], "url": r["url"],
             "rank": r["rank"], "views": r["views"],
-            "local": lexicon.locality(ents)[1] == "AP",
+            "local": lexicon.locality(ents)[1] == config.LOCAL_LABEL,
             "covered": covered,
             "age_min": round(_minutes_since(r["ts"])),
         })
