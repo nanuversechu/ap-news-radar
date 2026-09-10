@@ -9,14 +9,31 @@ Built for a desk, not a data scientist. No API keys, no accounts, no
 
 ## See it without installing anything
 
-**<https://nanuversechu.github.io/ap-news-radar/>** — a frozen copy of the
-live dashboard, exactly as the desk sees it, with the data of the moment it
-was taken. Nothing moves on it; every link opens the real article. The time it
-was taken is in the top bar. To refresh it, on the desk machine:
+**<https://nanuversechu.github.io/ap-news-radar/>** — a copy of the live
+dashboard, exactly as the desk sees it. **It refreshes itself every 15
+minutes**, so the link is current without anyone touching it; the time it was
+taken is in the top bar. Nothing animates on the page, and every link opens the
+real article.
+
+Allowing for GitHub's ten-minute CDN cache, a visitor sees a board at most
+about twenty-five minutes old.
+
+The refresh is a systemd timer, `ap-radar-publish.timer`, running
+[`publish.sh`](publish.sh). It only publishes when the radar answered and
+produced a real page, so a stopped radar leaves the last good snapshot up
+rather than replacing it with an error. The page is force-pushed to a
+single-commit `gh-pages` branch, so the repository stays the size of one
+snapshot however often it refreshes.
 
 ```bash
-python3 -m radar snapshot && git add docs && git commit -m "snapshot" && git push
+systemctl --user list-timers ap-radar-publish.timer
 ```
+
+```bash
+./publish.sh          # publish immediately, by hand
+```
+
+The Telangana twin is at <https://nanuversechu.github.io/tg-news-radar/>.
 
 ## Bookmark this
 
