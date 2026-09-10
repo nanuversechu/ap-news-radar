@@ -9,21 +9,44 @@ Built for a desk, not a data scientist. No API keys, no accounts, no
 
 ## See it without installing anything
 
-**<https://nanuversechu.github.io/ap-news-radar/>** — a copy of the live
-dashboard, exactly as the desk sees it. **It refreshes itself every 15
-minutes**, so the link is current without anyone touching it; the time it was
-taken is in the top bar. Nothing animates on the page, and every link opens the
-real article.
+**<https://nanuversechu.github.io/ap-news-radar/>** — the board as the desk sees
+it. **It is private:** the page is encrypted, and asks for a key before it
+shows anything. It **republishes itself every 15 minutes**, so the link stays
+current without anyone touching it.
 
-Allowing for GitHub's ten-minute CDN cache, a visitor sees a board at most
-about twenty-five minutes old.
+### How the lock works
 
-The refresh is a systemd timer, `ap-radar-publish.timer`, running
-[`publish.sh`](publish.sh). It only publishes when the radar answered and
+GitHub Pages is a static host — there is no server to check a password
+against, and a page that merely *asks* for one while carrying the content in
+its HTML protects nothing. So the board is genuinely encrypted:
+**AES-256-GCM**, with the key derived in the reader's browser by PBKDF2-SHA256
+over 250,000 iterations. What GitHub serves is an unlock form and a block of
+ciphertext. `curl` on the URL returns ciphertext. A wrong key fails the GCM
+authentication tag and yields nothing.
+
+The key lives in the publish service unit and in `.radar-key` — both outside
+the repository, both `chmod 600`. `publish.sh` refuses to run without one, so
+the board cannot reach the open web by accident. A reader's key is remembered
+for their browser tab; a link of the form `…/#k=THE-KEY` opens straight in,
+and the fragment is never sent to any server.
+
+Honest limits: this protects against anyone who does not have the key, not
+against someone who has it, and not against an attacker willing to grind
+guesses offline against the downloaded file — which is why the key is 79 bits
+of randomness rather than a word. To change it, edit `.radar-key` and the
+`Environment=RADAR_PAGE_KEY=` line in the publish unit, then run
+`./publish.sh`.
+
+Allowing for GitHub's ten-minute CDN cache, a reader sees a board at most
+about twenty-five minutes old. The refresh is a systemd timer running
+[`publish.sh`](publish.sh); it only publishes when the radar answered and
 produced a real page, so a stopped radar leaves the last good snapshot up
 rather than replacing it with an error. The page is force-pushed to a
 single-commit `gh-pages` branch, so the repository stays the size of one
 snapshot however often it refreshes.
+
+`publish.sh` needs `python-cryptography` for the encryption step (already on
+Arch). The radar itself still needs nothing but the standard library.
 
 ```bash
 systemctl --user list-timers ap-radar-publish.timer
@@ -99,17 +122,22 @@ stop the service first, or the two will fight over the port.
 
 ## The look
 
-It wears your Omarchy theme. The server reads
-`~/.local/state/omarchy/current/theme/colors.toml` on every refresh, so
-`omarchy theme set …` restyles the dashboard within thirty seconds, no restart.
-Font is JetBrainsMono Nerd Font, the one your terminal uses. Square corners
-everywhere, a waybar-style status bar, meters drawn in block characters.
+Square corners everywhere, JetBrainsMono Nerd Font, a waybar-style status bar,
+meters drawn in block characters.
 
-Generated themes can be muddy — one names an olive "red" — and a dim colour
-on a dark ground is unreadable at 13 px. So every text role is contrast-checked
-against the theme background and nudged in lightness until it clears 4.5:1,
-hue and saturation kept. The desktop keeps its palette; the text stays legible.
-Without Omarchy it falls back to Rose Pine.
+The palette is **Neon Noir**: a violet-black ground rather than pure black,
+because saturated colour on `#000` haloes and tires the eye within minutes.
+Pink carries the brand and the loudest scores, mint means rising, coral means
+fading, cyan and amber fill the middle — and body text stays near-white, since
+neon belongs on the handful of glyphs that must catch the eye across a room,
+never on anything you actually read. Every text role clears 4.5:1; most sit
+between 7:1 and 16:1.
+
+Light or dark still follows your desktop, and the status bar still names your
+Omarchy theme. To follow Omarchy's own colours instead, set
+`RADAR_PALETTE=omarchy` — useful when a desktop theme is well-tuned; the
+generated wallpaper themes are muddy enough that one of them names an olive
+"red".
 
 Direction is never colour alone: **▲ up · ▼ down · ● new · → flat** on
 every trend and story, so it reads even on a palette where red and green agree.
